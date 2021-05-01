@@ -46,9 +46,9 @@ Eigen::Matrix<T, 3, 3> user_implemented_expmap(
   Eigen::Matrix<T, 3, 3> xi_hat;
   xi_hat << 0, -xi(2), xi(1), xi(2), 0, -xi(0), -xi(1), xi(0), 0;
   std::cout << xi_hat << std::endl;
-  double theta =
+  T theta =
       xi.norm() +
-      std::numeric_limits<double>::epsilon();  // add infitesmal to avoid
+      std::numeric_limits<T>::epsilon();  // add infitesmal to avoid
                                                // divison by zero
 
   return Eigen::Matrix<T, 3, 3>::Identity(3, 3) +
@@ -61,10 +61,10 @@ template <class T>
 Eigen::Matrix<T, 3, 1> user_implemented_logmap(
     const Eigen::Matrix<T, 3, 3>& mat) {
   // TODO SHEET 1: implement
-  double theta = acos((mat.trace() - 1) / 2.0);
+  T theta = acos((mat.trace() - 1) / 2.0);
   Eigen::Matrix<T, 3, 1> w;
   w << mat(2, 1) - mat(1, 2), mat(0, 2) - mat(2, 0), mat(1, 0) - mat(0, 1);
-  w = w * theta / (2 * sin(theta) + std::numeric_limits<double>::epsilon());
+  w = w * theta / (2 * sin(theta) + std::numeric_limits<T>::epsilon());
 
   return w;
 }
@@ -86,12 +86,12 @@ Eigen::Matrix<T, 4, 4> user_implemented_expmap(
 
   Eigen::Matrix<T, 3, 3> w_hat;
   w_hat << 0, -w(2), w(1), w(2), 0, -w(0), -w(1), w(0), 0;
-  double theta = w.norm() + std::numeric_limits<double>::epsilon();
-
+  T theta = w.norm() + std::numeric_limits<T>::epsilon();
+  T theta_sq = theta*theta;
   Eigen::Matrix<T, 3, 3> J =
       Eigen::Matrix<T, 3, 3>::Identity(3, 3) +
-      ((1 - cos(theta)) / (pow(theta, 2))) * w_hat +
-      ((theta - sin(theta)) / pow(theta, 3)) * w_hat * w_hat;
+      ((1 - cos(theta)) / (theta_sq)) * w_hat +
+      ((theta - sin(theta)) / (theta_sq*theta)) * w_hat * w_hat;
 
   zeta.block(0, 3, 3, 1) = (J * v);
   return zeta;
@@ -106,13 +106,13 @@ Eigen::Matrix<T, 6, 1> user_implemented_logmap(
   Eigen::Matrix<T, 3, 3> R = mat.block(0, 0, 3, 3);
   Eigen::Matrix<T, 3, 1> t = mat.block(0, 3, 3, 1);
   res.tail(3) = user_implemented_logmap(R);
-  double theta = res.tail(3).norm() + std::numeric_limits<double>::epsilon();
+  T theta = res.tail(3).norm() + std::numeric_limits<T>::epsilon();
   Eigen::Matrix<T, 3, 3> w_hat;
   w_hat << 0, -res(5), res(4), res(5), 0, -res(3), -res(4), res(3), 0;
 
   Eigen::Matrix<T, 3, 3> J_inv =
       Eigen::Matrix<T, 3, 3>::Identity(3, 3) - w_hat / 2 +
-      ((1 / pow(theta, 2) - (1 + cos(theta)) / (2 * theta * sin(theta))) *
+      ((1 / (theta*theta) - (1 + cos(theta)) / (2 * theta * sin(theta))) *
        w_hat * w_hat);
 
   res.head(3) = J_inv * t;
