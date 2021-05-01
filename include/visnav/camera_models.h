@@ -85,13 +85,13 @@ class PinholeCamera : public AbstractCamera<Scalar> {
     Vec2 res;
 
     // TODO SHEET 2: implement camera model
-    UNUSED(fx);
-    UNUSED(fy);
-    UNUSED(cx);
-    UNUSED(cy);
-    UNUSED(x);
-    UNUSED(y);
-    UNUSED(z);
+    //UNUSED(fx);
+    //UNUSED(fy);
+    //UNUSED(cx);
+    //UNUSED(cy);
+    //UNUSED(x);
+    //UNUSED(y);
+    //UNUSED(z);
 
     return res;
   }
