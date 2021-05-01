@@ -47,9 +47,8 @@ Eigen::Matrix<T, 3, 3> user_implemented_expmap(
   xi_hat << 0, -xi(2), xi(1), xi(2), 0, -xi(0), -xi(1), xi(0), 0;
   std::cout << xi_hat << std::endl;
   T theta =
-      xi.norm() +
-      std::numeric_limits<T>::epsilon();  // add infitesmal to avoid
-                                               // divison by zero
+      xi.norm() + std::numeric_limits<T>::epsilon();  // add infitesmal to avoid
+                                                      // divison by zero
 
   return Eigen::Matrix<T, 3, 3>::Identity(3, 3) +
          (sin(theta) / theta) * xi_hat +
@@ -87,11 +86,11 @@ Eigen::Matrix<T, 4, 4> user_implemented_expmap(
   Eigen::Matrix<T, 3, 3> w_hat;
   w_hat << 0, -w(2), w(1), w(2), 0, -w(0), -w(1), w(0), 0;
   T theta = w.norm() + std::numeric_limits<T>::epsilon();
-  T theta_sq = theta*theta;
+  T theta_sq = theta * theta;
   Eigen::Matrix<T, 3, 3> J =
       Eigen::Matrix<T, 3, 3>::Identity(3, 3) +
       ((1 - cos(theta)) / (theta_sq)) * w_hat +
-      ((theta - sin(theta)) / (theta_sq*theta)) * w_hat * w_hat;
+      ((theta - sin(theta)) / (theta_sq * theta)) * w_hat * w_hat;
 
   zeta.block(0, 3, 3, 1) = (J * v);
   return zeta;
@@ -112,7 +111,7 @@ Eigen::Matrix<T, 6, 1> user_implemented_logmap(
 
   Eigen::Matrix<T, 3, 3> J_inv =
       Eigen::Matrix<T, 3, 3>::Identity(3, 3) - w_hat / 2 +
-      ((1 / (theta*theta) - (1 + cos(theta)) / (2 * theta * sin(theta))) *
+      ((1 / (theta * theta) - (1 + cos(theta)) / (2 * theta * sin(theta))) *
        w_hat * w_hat);
 
   res.head(3) = J_inv * t;
