@@ -346,15 +346,15 @@ void compute_projections() {
       Sophus::SE3d T_w_i = vec_T_w_i[kv.first.frame_id];
       // Transformation from camera to body (IMU) frame
       Sophus::SE3d T_i_c = calib_cam.T_i_c[kv.first.cam_id];
+
       // 3D coordinates of the aprilgrid corner in the world frame
       Eigen::Vector3d p_3d = aprilgrid.aprilgrid_corner_pos_3d[i];
 
       // TODO SHEET 2: project point
-      UNUSED(T_w_i);
-      UNUSED(T_i_c);
-      UNUSED(p_3d);
-      Eigen::Vector2d p_2d;
 
+      Eigen::Vector2d p_2d;
+      auto cam_cam = calib_cam.intrinsics[kv.first.cam_id];
+      p_2d = cam_cam->project(T_i_c.inverse() * T_w_i.inverse() * p_3d);
       ccd.corners.push_back(p_2d);
     }
 
@@ -368,24 +368,57 @@ void optimize() {
 
   // TODO SHEET 2: setup optimization problem
 
+  for (const auto& kv : calib_corners) {
+    for (size_t i = 0; i < kv.second.corner_ids.size(); i++) {
+      Sophus::SE3d T_w_i = vec_T_w_i[kv.first.frame_id];
+      Sophus::SE3d T_i_c = calib_cam.T_i_c[kv.first.cam_id];
+      Eigen::Matrix<double, 8, 1> params(
+          calib_cam.intrinsics.at(kv.first.cam_id)->getParam().data());
+      //.data();
+      Eigen::Vector3d p_3d =
+          aprilgrid.aprilgrid_corner_pos_3d[kv.second.corner_ids[i]];
+      Eigen::Vector2d p_2d = kv.second.corners[i];
+      problem.AddParameterBlock(T_w_i.data(), Sophus::SE3d::num_parameters,
+                                new Sophus::test::LocalParameterizationSE3);
+
+      problem.AddParameterBlock(T_i_c.data(), Sophus::SE3d::num_parameters,
+                                new Sophus::test::LocalParameterizationSE3);
+
+      problem.AddParameterBlock(params.data(), 8);
+
+      if (kv.first.cam_id == 0) {
+        problem.SetParameterBlockConstant(T_i_c.data());
+      }
+
+      ceres::CostFunction* cost_function =
+          new ceres::AutoDiffCostFunction<ReprojectionCostFunctor, 2,
+                                          Sophus::SE3d::num_parameters,
+                                          Sophus::SE3d::num_parameters, 8>(
+              new ReprojectionCostFunctor(p_2d, p_3d, cam_model));
+      problem.AddResidualBlock(cost_function, NULL, T_w_i.inverse().data(),
+                               T_i_c.inverse().data(), params.data());
+    }
+  }
+
   ceres::Solver::Options options;
   options.gradient_tolerance = 0.01 * Sophus::Constants<double>::epsilon();
   options.function_tolerance = 0.01 * Sophus::Constants<double>::epsilon();
   options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;
   options.num_threads = tbb::task_scheduler_init::default_num_threads();
-
+  std::cout << "I am here atm 3" << std::endl;
   // Solve
   ceres::Solver::Summary summary;
   Solve(options, &problem, &summary);
   std::cout << summary.FullReport() << std::endl;
-
+  std::cout << "I am here atm 4" << std::endl;
   {
     cereal::JSONOutputArchive archive(std::cout);
     archive(calib_cam);
     std::cout << std::endl;
   }
-
+  std::cout << "I am here atm 5" << std::endl;
   compute_projections();
+  std::cout << "I am here atm 6" << std::endl;
 }
 
 void save_calib() {
