@@ -83,15 +83,13 @@ class PinholeCamera : public AbstractCamera<Scalar> {
     const Scalar& z = p[2];
 
     Vec2 res;
-
     // TODO SHEET 2: implement camera model
-    //UNUSED(fx);
-    //UNUSED(fy);
-    //UNUSED(cx);
-    //UNUSED(cy);
-    //UNUSED(x);
-    //UNUSED(y);
-    //UNUSED(z);
+    res[0] = x;
+    res[1] = y;
+
+    res = res / z;
+    res[0] = res[0] * fx + cx;
+    res[1] = res[1] * fy + cy;
 
     return res;
   }
@@ -105,12 +103,10 @@ class PinholeCamera : public AbstractCamera<Scalar> {
     Vec3 res;
 
     // TODO SHEET 2: implement camera model
-    UNUSED(p);
-    UNUSED(fx);
-    UNUSED(fy);
-    UNUSED(cx);
-    UNUSED(cy);
-
+    res[0] = (p[0] - cx) / fx;
+    res[1] = (p[1] - cy) / fy;
+    res[2] = 1;
+    res /= sqrt(res[0] * res[0] + res[1] * res[1] + 1);
     return res;
   }
 
@@ -168,16 +164,10 @@ class ExtendedUnifiedCamera : public AbstractCamera<Scalar> {
     Vec2 res;
 
     // TODO SHEET 2: implement camera model
-    UNUSED(fx);
-    UNUSED(fy);
-    UNUSED(cx);
-    UNUSED(cy);
-    UNUSED(alpha);
-    UNUSED(beta);
-    UNUSED(x);
-    UNUSED(y);
-    UNUSED(z);
+    Scalar d = sqrt(beta * (x * x + y * y) + z * z);
 
+    res[0] = fx * x / (alpha * d + (1 - alpha) * z) + cx;
+    res[1] = fy * y / (alpha * d + (1 - alpha) * z) + cy;
     return res;
   }
 
@@ -192,14 +182,15 @@ class ExtendedUnifiedCamera : public AbstractCamera<Scalar> {
     Vec3 res;
 
     // TODO SHEET 2: implement camera model
-    UNUSED(p);
-    UNUSED(fx);
-    UNUSED(fy);
-    UNUSED(cx);
-    UNUSED(cy);
-    UNUSED(alpha);
-    UNUSED(beta);
+    res[0] = (p[0] - cx) / fx;
+    res[1] = (p[1] - cy) / fy;
 
+    Scalar r_sq = res[0] * res[0] + res[1] * res[1];
+
+    res[2] = (1 - beta * alpha * alpha * r_sq) /
+             (alpha * sqrt(1 - (2 * alpha - 1) * beta * r_sq) + 1 - alpha);
+
+    res /= sqrt(res[0] * res[0] + res[1] * res[1] + res[2] * res[2]);
     return res;
   }
 
@@ -253,16 +244,11 @@ class DoubleSphereCamera : public AbstractCamera<Scalar> {
     Vec2 res;
 
     // TODO SHEET 2: implement camera model
-    UNUSED(fx);
-    UNUSED(fy);
-    UNUSED(cx);
-    UNUSED(cy);
-    UNUSED(xi);
-    UNUSED(alpha);
-    UNUSED(x);
-    UNUSED(y);
-    UNUSED(z);
+    Scalar d1 = sqrt(x * x + y * y + z * z);
+    Scalar d2 = sqrt(x * x + y * y + (xi * d1 + z) * (xi * d1 + z));
 
+    res[0] = fx * x / (alpha * d2 + (1 - alpha) * (xi * d1 + z)) + cx;
+    res[1] = fy * y / (alpha * d2 + (1 - alpha) * (xi * d1 + z)) + cy;
     return res;
   }
 
@@ -277,13 +263,15 @@ class DoubleSphereCamera : public AbstractCamera<Scalar> {
     Vec3 res;
 
     // TODO SHEET 2: implement camera model
-    UNUSED(p);
-    UNUSED(fx);
-    UNUSED(fy);
-    UNUSED(cx);
-    UNUSED(cy);
-    UNUSED(xi);
-    UNUSED(alpha);
+    res[0] = (p[0] - cx) / fx;
+    res[1] = (p[1] - cy) / fy;
+    Scalar r_sq = res[0] * res[0] + res[1] * res[1];
+    res[2] = (1 - alpha * alpha * r_sq) /
+             (alpha * sqrt(1 - (2 * alpha - 1) * r_sq) + 1 - alpha);
+
+    res *= (res[2] * xi + sqrt(res[2] * res[2] + (1 - xi * xi) * r_sq)) /
+           (res[2] * res[2] + r_sq);
+    res[2] -= xi;
     return res;
   }
 
@@ -341,18 +329,15 @@ class KannalaBrandt4Camera : public AbstractCamera<Scalar> {
     Vec2 res;
 
     // TODO SHEET 2: implement camera model
-    UNUSED(fx);
-    UNUSED(fy);
-    UNUSED(cx);
-    UNUSED(cy);
-    UNUSED(k1);
-    UNUSED(k2);
-    UNUSED(k3);
-    UNUSED(k4);
-    UNUSED(x);
-    UNUSED(y);
-    UNUSED(z);
-
+    Scalar r = sqrt(x * x + y * y) + std::numeric_limits<Scalar>::epsilon();
+    Scalar theta = atan2(r, z);
+    Scalar d_theta =
+        theta *
+        (1 + theta * theta *
+                 (k1 + theta * theta *
+                           (k2 + theta * theta * (k3 + theta * theta * k4))));
+    res[0] = fx * d_theta * x / r + cx;
+    res[1] = fy * d_theta * y / r + cy;
     return res;
   }
 
@@ -365,11 +350,69 @@ class KannalaBrandt4Camera : public AbstractCamera<Scalar> {
     Vec3 res;
 
     // TODO SHEET 2: implement camera model
-    UNUSED(p);
-    UNUSED(fx);
-    UNUSED(fy);
-    UNUSED(cx);
-    UNUSED(cy);
+    res[0] = (p[0] - cx) / fx;
+    res[1] = (p[1] - cy) / fy;
+    Scalar ru = sqrt(res[0] * res[0] + res[1] * res[1]);
+
+    // Newton iterate
+    Scalar theta = Scalar(1);
+    Scalar d_theta =
+        theta * (1 + theta * theta *
+                         (param[4] +
+                          theta * theta *
+                              (param[5] +
+                               theta * theta *
+                                   (param[6] + theta * theta * param[7])))) -
+        ru;
+    Scalar d_dtheta =
+        (1 + theta * theta *
+                 (3 * param[4] +
+                  theta * theta *
+                      (5 * param[5] +
+                       theta * theta *
+                           (7 * param[6] + theta * theta * 9 * param[7]))));
+    theta = theta - d_theta / d_dtheta;
+
+    // Iterate once more
+    d_theta =
+        theta * (1 + theta * theta *
+                         (param[4] +
+                          theta * theta *
+                              (param[5] +
+                               theta * theta *
+                                   (param[6] + theta * theta * param[7])))) -
+        ru;
+    d_dtheta =
+        (1 + theta * theta *
+                 (3 * param[4] +
+                  theta * theta *
+                      (5 * param[5] +
+                       theta * theta *
+                           (7 * param[6] + theta * theta * 9 * param[7]))));
+    theta = theta - d_theta / d_dtheta;
+    // Iterate once more
+    d_theta =
+        theta * (1 + theta * theta *
+                         (param[4] +
+                          theta * theta *
+                              (param[5] +
+                               theta * theta *
+                                   (param[6] + theta * theta * param[7])))) -
+        ru;
+    d_dtheta =
+        (1 + theta * theta *
+                 (3 * param[4] +
+                  theta * theta *
+                      (5 * param[5] +
+                       theta * theta *
+                           (7 * param[6] + theta * theta * 9 * param[7]))));
+    theta = theta - d_theta / d_dtheta;
+
+    res[0] =
+        sin(theta) * res[0] / (ru + std::numeric_limits<Scalar>::epsilon());
+    res[1] =
+        sin(theta) * res[1] / (ru + std::numeric_limits<Scalar>::epsilon());
+    res[2] = cos(theta);
 
     return res;
   }
