@@ -106,7 +106,8 @@ class PinholeCamera : public AbstractCamera<Scalar> {
     res[0] = (p[0] - cx) / fx;
     res[1] = (p[1] - cy) / fy;
     res[2] = Scalar(1);
-    res /= sqrt(res[0] * res[0] + res[1] * res[1] + Scalar(1));
+    // res /= sqrt(res[0] * res[0] + res[1] * res[1] + Scalar(1));
+    res.normalize();
     return res;
   }
 
