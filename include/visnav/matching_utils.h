@@ -55,8 +55,6 @@ void computeEssential(const Sophus::SE3d& T_0_1, Eigen::Matrix3d& E) {
   // TODO SHEET 3: compute essential matrix
   Eigen::Matrix3d t_hat;
   Eigen::Vector3d t_0_1_ = t_0_1.normalized();
-  //t_hat << 0, -t_0_1_[2], t_0_1_[1], t_0_1_[2], 0, -t_0_1_[0], -t_0_1_[1],
-  //    t_0_1_[0], 0;
   t_hat = Sophus::SO3d::hat(t_0_1_);
   E = t_hat * R_0_1;
 }

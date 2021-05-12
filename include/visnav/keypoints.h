@@ -166,11 +166,13 @@ void computeAngles(const pangolin::ManagedImage<uint8_t>& img_raw,
       double m01 = 0;
       double m10 = 0;
       for (int u = -HALF_PATCH_SIZE; u <= HALF_PATCH_SIZE; u++) {
-        for (int v = 0; u * u + v * v <= HALF_PATCH_SIZE * HALF_PATCH_SIZE; v++) {
+        for (int v = 0; u * u + v * v <= HALF_PATCH_SIZE * HALF_PATCH_SIZE;
+             v++) {
           m01 += v * img_raw(cx + u, cy + v);
           m10 += u * img_raw(cx + u, cy + v);
         }
-        for (int v = -1; u * u + v * v <= HALF_PATCH_SIZE * HALF_PATCH_SIZE; v--) {
+        for (int v = -1; u * u + v * v <= HALF_PATCH_SIZE * HALF_PATCH_SIZE;
+             v--) {
           m01 += v * img_raw(cx + u, cy + v);
           m10 += u * img_raw(cx + u, cy + v);
         }
