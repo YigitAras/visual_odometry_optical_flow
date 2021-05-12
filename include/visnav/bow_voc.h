@@ -65,9 +65,25 @@ class BowVocabulary {
     // feature and descriptor of the cluster centroid. Iterate until you reach
     // the leaf node. Save m_nodes[id].word_id and m_nodes[id].weight of the
     // leaf node to the corresponding variables.
-    UNUSED(feature);
-    UNUSED(word_id);
-    UNUSED(weight);
+
+    // std::vector<Node> m_nodes;
+    int curr_id = 0;
+
+    while (!m_nodes[curr_id].isLeaf()) {
+      auto c_ids = m_nodes[curr_id].children;
+      int min_dist = 257;
+      int min_id = 0;
+      for (auto id : c_ids) {
+        int score = (feature ^ m_nodes[id].descriptor).count();
+        if (score < min_dist) {
+          min_dist = score;
+          min_id = id;
+        }
+      }
+      curr_id = min_id;
+    }
+    weight = m_nodes[curr_id].weight;
+    word_id = m_nodes[curr_id].word_id;
   }
 
   inline void transform(const std::vector<TDescriptor>& features,
@@ -81,7 +97,34 @@ class BowVocabulary {
     // TODO SHEET 3: transform the entire vector of features from an image to
     // the BoW representation (you can use transformFeatureToWord function). Use
     // L1 norm to normalize the resulting BoW vector.
-    UNUSED(features);
+    double total = 0;
+    for (auto feat : features) {
+      visnav::WordValue weight;
+      visnav::WordId word_id;
+
+      transformFeatureToWord(feat, word_id, weight);
+
+      std::pair<visnav::WordId, visnav::WordValue> item =
+          std::pair<visnav::WordId, visnav::WordValue>(word_id, weight);
+
+      if (weight == 0) continue;
+
+      bool found = false;
+      for (unsigned int i = 0; i < v.size(); i++) {
+        if (v[i].first == word_id) {
+          v[i].second += weight;
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        v.push_back(item);
+      }
+      total += weight;
+    }
+    for (unsigned int i = 0; i < v.size(); i++) {
+      v[i].second /= total;
+    }
   }
 
   void save(const std::string& filename) const {
