@@ -49,8 +49,10 @@ class BowDatabase {
   inline void insert(const FrameCamId& fcid, const BowVector& bow_vector) {
     // TODO SHEET 3: add a bow_vector that corresponds to frame fcid to the
     // inverted index. You can assume the image hasn't been added before.
-    UNUSED(fcid);
-    UNUSED(bow_vector);
+
+    for (auto wow : bow_vector) {
+      inverted_index[wow.first].push_back(std::make_pair(fcid, wow.second));
+    }
   }
 
   inline void query(const BowVector& bow_vector, size_t num_results,
@@ -60,9 +62,35 @@ class BowDatabase {
     // to accumulate scores and std::partial_sort for getting the closest
     // results. You should use L1 difference as the distance measure. You can
     // assume that BoW descripors are L1 normalized.
-    UNUSED(bow_vector);
-    UNUSED(num_results);
-    UNUSED(results);
+
+    std::unordered_map<FrameCamId, double> accumulator;
+    for (auto bow : bow_vector) {
+      WordId wid = bow.first;
+      WordValue weight1 = bow.second;
+      auto it = inverted_index.find(wid);
+      if (it != inverted_index.end()) {
+        auto arr = it->second;
+        for (auto elem : arr) {
+          FrameCamId fid = elem.first;
+          WordValue weight2 = elem.second;
+          accumulator[fid] +=
+              (abs(weight1 - weight2) - abs(weight1) - abs(weight2));
+        }
+      }
+    }
+
+    std::vector<std::pair<FrameCamId, double>> accum;
+    for (auto elem : accumulator) {
+      accum.push_back(std::make_pair(elem.first, elem.second + 2.0));
+    }
+    int real_size = std::min(accum.size(), num_results);
+    std::partial_sort(
+        accum.begin(), accum.begin() + real_size, accum.end(),
+        [](auto& left, auto& right) { return left.second < right.second; });
+
+    for (int i = 0; i < real_size; i++) {
+      results.push_back(accum[i]);
+    }
   }
 
   void clear() { inverted_index.clear(); }

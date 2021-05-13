@@ -53,9 +53,10 @@ void computeEssential(const Sophus::SE3d& T_0_1, Eigen::Matrix3d& E) {
   const Eigen::Matrix3d R_0_1 = T_0_1.rotationMatrix();
 
   // TODO SHEET 3: compute essential matrix
-  UNUSED(E);
-  UNUSED(t_0_1);
-  UNUSED(R_0_1);
+  Eigen::Matrix3d t_hat;
+  Eigen::Vector3d t_0_1_ = t_0_1.normalized();
+  t_hat = Sophus::SO3d::hat(t_0_1_);
+  E = t_hat * R_0_1;
 }
 
 void findInliersEssential(const KeypointsData& kd1, const KeypointsData& kd2,
@@ -68,14 +69,15 @@ void findInliersEssential(const KeypointsData& kd1, const KeypointsData& kd2,
   for (size_t j = 0; j < md.matches.size(); j++) {
     const Eigen::Vector2d p0_2d = kd1.corners[md.matches[j].first];
     const Eigen::Vector2d p1_2d = kd2.corners[md.matches[j].second];
+    Eigen::Vector3d p0_3d = cam1->unproject(p0_2d);
+    Eigen::Vector3d p1_3d = cam2->unproject(p1_2d);
 
-    // TODO SHEET 3: determine inliers and store in md.inliers
-    UNUSED(cam1);
-    UNUSED(cam2);
-    UNUSED(E);
-    UNUSED(epipolar_error_threshold);
-    UNUSED(p0_2d);
-    UNUSED(p1_2d);
+    double epi_con = abs(p0_3d.transpose() * E * p1_3d);
+    if (epi_con < epipolar_error_threshold) {
+      std::pair<FeatureId, FeatureId> mp(md.matches[j].first,
+                                         md.matches[j].second);
+      md.inliers.push_back(mp);
+    }
   }
 }
 
@@ -94,11 +96,42 @@ void findInliersRansac(const KeypointsData& kd1, const KeypointsData& kd2,
   // was successful, you should do non-linear refinement of the model parameters
   // using all inliers, and then re-estimate the inlier set with the refined
   // model parameters.
-  UNUSED(kd1);
-  UNUSED(kd2);
-  UNUSED(cam1);
-  UNUSED(cam2);
-  UNUSED(ransac_thresh);
-  UNUSED(ransac_min_inliers);
+  opengv::bearingVectors_t bear1;
+  opengv::bearingVectors_t bear2;
+
+  for (long unsigned int i = 0; i < md.matches.size(); i++) {
+    bear1.push_back(cam1->unproject(kd1.corners[md.matches[i].first]));
+    bear2.push_back(cam2->unproject(kd2.corners[md.matches[i].second]));
+  }
+  opengv::relative_pose::CentralRelativeAdapter adapter(bear1, bear2);
+  opengv::sac::Ransac<
+      opengv::sac_problems::relative_pose::CentralRelativePoseSacProblem>
+      ransac;
+  std::shared_ptr<
+      opengv::sac_problems::relative_pose::CentralRelativePoseSacProblem>
+      relposeproblem_ptr(
+          new opengv::sac_problems::relative_pose::
+              CentralRelativePoseSacProblem(
+                  adapter, opengv::sac_problems::relative_pose::
+                               CentralRelativePoseSacProblem::NISTER));
+  // 0.92 > 0.99
+  ransac.sac_model_ = relposeproblem_ptr;
+  ransac.threshold_ = ransac_thresh;
+  ransac.computeModel();
+
+  opengv::transformation_t optimized =
+      opengv::relative_pose::optimize_nonlinear(adapter, ransac.inliers_);
+  ransac.sac_model_->selectWithinDistance(optimized, ransac_thresh,
+                                          ransac.inliers_);
+  Eigen::Matrix4d res;
+  res.block<3, 3>(0, 0) = optimized.block<3, 3>(0, 0);
+  res.block<3, 1>(0, 3) = optimized.block<3, 1>(0, 3).normalized();
+  res.block<1, 4>(3, 0) = Eigen::Vector4d(0, 0, 0, 1);
+  md.T_i_j = Sophus::SE3d(res);
+  if (ransac.inliers_.size() > ransac_min_inliers) {
+    for (long unsigned int i = 0; i < ransac.inliers_.size(); i++) {
+      md.inliers.push_back(md.matches[ransac.inliers_[i]]);
+    }
+  }
 }
 }  // namespace visnav
