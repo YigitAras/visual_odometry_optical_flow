@@ -145,6 +145,45 @@ int add_new_landmarks_between_cams(const FrameCamId& fcid0,
   UNUSED(cameras);
   UNUSED(landmarks);
 
+  opengv::bearingVectors_t bear1;
+  opengv::bearingVectors_t bear2;
+
+  for (auto sid : shared_track_ids) {
+    auto kp0 = feature_corners.at(fcid0);
+    auto kp1 = feature_corners.at(fcid1);
+
+    auto feat_track = feature_tracks.at(sid);
+
+    auto fid0 = feat_track.at(fcid0);
+    auto fid1 = feat_track.at(fcid1);
+
+    bear1.push_back(calib_cam.intrinsics[0]->unproject(kp0.corners[fid0]));
+    bear2.push_back(calib_cam.intrinsics[1]->unproject(kp0.corners[fid1]));
+  }
+  // Calculate the transformation from second camera to the first camera frame
+  auto se3_trans = calib_cam.T_i_c[0].inverse() * calib_cam.T_i_c[1];
+
+  opengv::relative_pose::CentralRelativeAdapter adapter(
+      bear1, bear2, se3_trans.translation(), se3_trans.rotationMatrix());
+  int ind = 0;
+  for (auto sid : shared_track_ids) {
+    if (landmarks.find(sid) != landmarks.end()) {
+      continue;
+    }
+    Landmark lm;
+
+    opengv::point_t pp = opengv::triangulation::triangulate(adapter, ind);
+    ind++;
+    lm.p = pp;
+    for (auto kv : cameras) {
+      auto sfcamid = kv.first;
+      auto strack = feature_tracks.at(sid);
+      if (strack.find(sfcamid) != strack.end())
+        lm.obs.insert(std::make_pair(sfcamid, strack.at(sfcamid)));
+    }
+    landmarks.insert(std::make_pair(sid, lm));
+  }
+
   return new_track_ids.size();
 }
 
@@ -169,11 +208,10 @@ bool initialize_scene_from_stereo_pair(const FrameCamId& fcid0,
   }
 
   // TODO SHEET 4: Initialize scene (add initial cameras and landmarks)
-  UNUSED(calib_cam);
-  UNUSED(feature_corners);
-  UNUSED(feature_tracks);
-  UNUSED(cameras);
-  UNUSED(landmarks);
+
+  cameras[fcid0].T_w_c = Sophus::SE3d(Eigen::Matrix4d::Identity());
+  cameras[fcid1].T_w_c =
+      cameras[fcid0].T_w_c * calib_cam.T_i_c[0].inverse() * calib_cam.T_i_c[1];
 
   return true;
 }
