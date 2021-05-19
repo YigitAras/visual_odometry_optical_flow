@@ -90,7 +90,7 @@ struct BundleAdjustmentReprojectionCostFunctor {
         AbstractCamera<T>::from_data(cam_model, sIntr);
 
     // TODO SHEET 4: Compute reprojection error
-
+    residuals = p_2d.cast<T>() - cam->project(T_w_c.inverse() * p_3d_w);
     return true;
   }
 
