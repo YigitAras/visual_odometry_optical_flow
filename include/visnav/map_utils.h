@@ -140,10 +140,51 @@ int add_new_landmarks_between_cams(const FrameCamId& fcid0,
   std::vector<TrackId> new_track_ids;
 
   // TODO SHEET 4: Triangulate all new features and add to the map
-  UNUSED(calib_cam);
-  UNUSED(feature_corners);
-  UNUSED(cameras);
-  UNUSED(landmarks);
+
+  opengv::bearingVectors_t bear1;
+  opengv::bearingVectors_t bear2;
+
+  for (auto sid : shared_track_ids) {
+    if (landmarks.find(sid) != landmarks.end()) {
+      continue;
+    }
+    auto kp0 = feature_corners.at(fcid0);
+    auto kp1 = feature_corners.at(fcid1);
+
+    auto feat_track = feature_tracks.at(sid);
+
+    auto fid0 = feat_track.at(fcid0);
+    auto fid1 = feat_track.at(fcid1);
+
+    bear1.push_back(
+        calib_cam.intrinsics[fcid0.cam_id]->unproject(kp0.corners[fid0]));
+    bear2.push_back(
+        calib_cam.intrinsics[fcid1.cam_id]->unproject(kp1.corners[fid1]));
+  }
+  // Calculate the transformation from second camera to the first camera frame
+
+  auto se3_trans = cameras.at(fcid0).T_w_c.inverse() * cameras.at(fcid1).T_w_c;
+  opengv::relative_pose::CentralRelativeAdapter adapter(
+      bear1, bear2, se3_trans.translation(), se3_trans.rotationMatrix());
+  int ind = 0;
+  for (auto sid : shared_track_ids) {
+    if (landmarks.find(sid) != landmarks.end()) {
+      continue;
+    }
+    Landmark lm;
+    new_track_ids.push_back(sid);
+    opengv::point_t pp = cameras.at(fcid0).T_w_c *
+                         opengv::triangulation::triangulate(adapter, ind);
+    ind++;
+    lm.p = pp;
+    for (auto kv : cameras) {
+      auto sfcamid = kv.first;
+      auto strack = feature_tracks.at(sid);
+      if (strack.find(sfcamid) != strack.end())
+        lm.obs.insert(std::make_pair(sfcamid, strack.at(sfcamid)));
+    }
+    landmarks.insert(std::make_pair(sid, lm));
+  }
 
   return new_track_ids.size();
 }
@@ -169,11 +210,12 @@ bool initialize_scene_from_stereo_pair(const FrameCamId& fcid0,
   }
 
   // TODO SHEET 4: Initialize scene (add initial cameras and landmarks)
-  UNUSED(calib_cam);
-  UNUSED(feature_corners);
-  UNUSED(feature_tracks);
-  UNUSED(cameras);
-  UNUSED(landmarks);
+
+  cameras[fcid0].T_w_c = Sophus::SE3d(Eigen::Matrix4d::Identity());
+  cameras[fcid1].T_w_c =
+      calib_cam.T_i_c[fcid0.cam_id].inverse() * calib_cam.T_i_c[fcid1.cam_id];
+  add_new_landmarks_between_cams(fcid0, fcid1, calib_cam, feature_corners,
+                                 feature_tracks, cameras, landmarks);
 
   return true;
 }
@@ -200,14 +242,49 @@ void localize_camera(
   inlier_track_ids.clear();
 
   // TODO SHEET 4: Localize a new image in a given map
-  UNUSED(fcid);
-  UNUSED(shared_track_ids);
-  UNUSED(calib_cam);
-  UNUSED(feature_corners);
-  UNUSED(feature_tracks);
-  UNUSED(landmarks);
-  UNUSED(T_w_c);
-  UNUSED(reprojection_error_pnp_inlier_threshold_pixel);
+  opengv::bearingVectors_t bear;
+  opengv::points_t kuma;
+  auto kp = feature_corners.at(fcid);
+
+  for (auto tid : shared_track_ids) {
+    auto track = feature_tracks.at(tid);
+    auto fid = track.at(fcid);
+    bear.push_back(
+        calib_cam.intrinsics[fcid.cam_id]->unproject(kp.corners[fid]));
+    kuma.push_back(landmarks.at(tid).p);
+  }
+
+  opengv::absolute_pose::CentralAbsoluteAdapter adapter(bear, kuma);
+
+  opengv::sac::Ransac<
+      opengv::sac_problems::absolute_pose::AbsolutePoseSacProblem>
+      ransac;
+  std::shared_ptr<opengv::sac_problems::absolute_pose::AbsolutePoseSacProblem>
+      cenposeproblem_ptr(
+          new opengv::sac_problems::absolute_pose::AbsolutePoseSacProblem(
+              adapter, opengv::sac_problems::absolute_pose::
+                           AbsolutePoseSacProblem::KNEIP));
+  // 0.92 > 0.99
+  ransac.sac_model_ = cenposeproblem_ptr;
+  ransac.threshold_ =
+      1.0 - cos(atan(reprojection_error_pnp_inlier_threshold_pixel / 500.0));
+  ransac.computeModel();
+
+  adapter.setR(ransac.model_coefficients_.block<3, 3>(0, 0));
+  adapter.sett(ransac.model_coefficients_.block<3, 1>(0, 3));
+
+  opengv::transformation_t optimized =
+      opengv::absolute_pose::optimize_nonlinear(adapter, ransac.inliers_);
+  ransac.sac_model_->selectWithinDistance(optimized, ransac.threshold_,
+                                          ransac.inliers_);
+  Eigen::Matrix4d res;
+  res.block<3, 3>(0, 0) = optimized.block<3, 3>(0, 0);
+  res.block<3, 1>(0, 3) = optimized.block<3, 1>(0, 3);
+  res.block<1, 4>(3, 0) = Eigen::Vector4d(0, 0, 0, 1);
+  T_w_c = Sophus::SE3d(res);
+  for (auto i : ransac.inliers_) {
+    inlier_track_ids.push_back(shared_track_ids[i]);
+  }
 }
 
 struct BundleAdjustmentOptions {
@@ -236,14 +313,46 @@ void bundle_adjustment(const Corners& feature_corners,
   ceres::Problem problem;
 
   // TODO SHEET 4: Setup optimization problem
-  UNUSED(feature_corners);
-  UNUSED(options);
-  UNUSED(fixed_cameras);
-  UNUSED(calib_cam);
-  UNUSED(cameras);
-  UNUSED(landmarks);
+  for (auto& cam : cameras) {
+    for (auto& lm : landmarks) {
+      if (lm.second.obs.find(cam.first) == lm.second.obs.end()) {
+        continue;
+      }
 
+      problem.AddParameterBlock(cam.second.T_w_c.data(),
+                                Sophus::SE3d::num_parameters,
+                                new Sophus::test::LocalParameterizationSE3);
+      if (fixed_cameras.find(cam.first) != fixed_cameras.end()) {
+        problem.SetParameterBlockConstant(cam.second.T_w_c.data());
+      }
+
+      problem.AddParameterBlock(lm.second.p.data(), 3);
+      double* params = calib_cam.intrinsics.at(cam.first.cam_id)->data();
+      problem.AddParameterBlock(params, 8);
+      if (!options.optimize_intrinsics) {
+        problem.SetParameterBlockConstant(params);
+      }
+      auto cam_model = calib_cam.intrinsics.at(cam.first.cam_id)->name();
+      auto kp = feature_corners.at(cam.first);
+      auto fid = lm.second.obs.at(cam.first);
+      auto p_2d = kp.corners[fid];
+
+      ceres::CostFunction* cost_function = new ceres::AutoDiffCostFunction<
+          BundleAdjustmentReprojectionCostFunctor, 2,
+          Sophus::SE3d::num_parameters, 3, 8>(
+          new BundleAdjustmentReprojectionCostFunctor(p_2d, cam_model));
+      if (options.use_huber) {
+        problem.AddResidualBlock(
+            cost_function, (new ceres::HuberLoss(options.huber_parameter)),
+            cam.second.T_w_c.data(), lm.second.p.data(), params);
+      } else {
+        problem.AddResidualBlock(cost_function, NULL, cam.second.T_w_c.data(),
+                                 lm.second.p.data(), params);
+      }
+    }
+  }
   // Solve
+
   ceres::Solver::Options ceres_options;
   ceres_options.max_num_iterations = options.max_num_iterations;
   ceres_options.linear_solver_type = ceres::SPARSE_SCHUR;

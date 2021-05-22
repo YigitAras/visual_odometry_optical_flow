@@ -128,7 +128,8 @@ void findInliersRansac(const KeypointsData& kd1, const KeypointsData& kd2,
   res.block<3, 1>(0, 3) = optimized.block<3, 1>(0, 3).normalized();
   res.block<1, 4>(3, 0) = Eigen::Vector4d(0, 0, 0, 1);
   md.T_i_j = Sophus::SE3d(res);
-  if (ransac.inliers_.size() > ransac_min_inliers) {
+
+  if ((int)ransac.inliers_.size() > ransac_min_inliers) {
     for (long unsigned int i = 0; i < ransac.inliers_.size(); i++) {
       md.inliers.push_back(md.matches[ransac.inliers_[i]]);
     }
