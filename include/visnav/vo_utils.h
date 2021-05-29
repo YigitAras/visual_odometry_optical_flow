@@ -275,38 +275,34 @@ void remove_old_keyframes(const FrameCamId fcidl, const int max_num_kfs,
   // optimization should be stored in kf_frames. Removed keyframes should be
   // removed from cameras and landmarks with no left observations should be
   // moved to old_landmarks.
-  
+
   std::vector<FrameCamId> cam_erased;
   std::vector<TrackId> lm_erased;
-  while((int)kf_frames.size() > max_num_kfs){
+  while ((int)kf_frames.size() > max_num_kfs) {
     auto next = *kf_frames.begin();
-    for(auto cam: cameras){
-      if(cam.first.frame_id == next){
-        
+    for (auto cam : cameras) {
+      if (cam.first.frame_id == next) {
         // remove the camera
-        for(auto &elm: landmarks){
+        for (auto& elm : landmarks) {
           elm.second.obs.erase(cam.first);
 
-          if(elm.second.obs.empty()){
-            old_landmarks.insert(std::make_pair(elm.first,elm.second));
+          if (elm.second.obs.empty()) {
+            old_landmarks.insert(std::make_pair(elm.first, elm.second));
             lm_erased.push_back(elm.first);
           }
-          
         }
         cam_erased.push_back(cam.first);
       }
     }
     kf_frames.erase(next);
-    for(auto c_er: cam_erased){
+    for (auto c_er : cam_erased) {
       cameras.erase(c_er);
     }
-    for(auto lm_er: lm_erased){
+    for (auto lm_er : lm_erased) {
       landmarks.erase(lm_er);
     }
     cam_erased.clear();
     lm_erased.clear();
   }
-  
-
 }
 }  // namespace visnav
