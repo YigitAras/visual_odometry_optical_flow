@@ -20,3 +20,4 @@ __pycache__
 !/test/ex4_test_data/*
 !/test/ex5_test_data/
 !/test/ex5_test_data/*
+CMakeLists.txt

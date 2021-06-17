@@ -64,6 +64,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <visnav/tracks.h>
 
 #include <visnav/serialization.h>
+#include <visnav/optical_flow.h>
 
 using namespace visnav;
 
@@ -138,6 +139,12 @@ Landmarks old_landmarks;
 /// determining outliers; indexed by images
 ImageProjections image_projections;
 
+// previous images and points for opt flow
+cv::Mat prevImageR;
+cv::Mat prevImageL;
+
+KeypointsData prevKDL;
+KeypointsData prevKDR;
 ///////////////////////////////////////////////////////////////////////////////
 /// GUI parameters
 ///////////////////////////////////////////////////////////////////////////////
@@ -778,11 +785,17 @@ void load_data(const std::string& dataset_path, const std::string& calib_path) {
 // until it returns false for automatic execution.
 bool next_step() {
   if (current_frame >= int(images.size()) / NUM_CAMS) return false;
+  if (current_frame < 150) {
+    current_frame = 150;
+    return true;
+    }
 
   const Sophus::SE3d T_0_1 = calib_cam.T_i_c[0].inverse() * calib_cam.T_i_c[1];
+  take_keyframe = true;
 
+  // VERY UGLY
   if (take_keyframe) {
-    take_keyframe = false;
+    //take_keyframe = false;
 
     FrameCamId fcidl(current_frame, 0), fcidr(current_frame, 1);
 
@@ -797,6 +810,8 @@ bool next_step() {
               << std::endl;
 
     MatchData md_stereo;
+    MatchData md_optical;
+
     KeypointsData kdl, kdr;
 
     pangolin::ManagedImage<uint8_t> imgl = pangolin::LoadImage(images[fcidl]);
@@ -806,18 +821,31 @@ bool next_step() {
                                   rotate_features);
     detectKeypointsAndDescriptors(imgr, kdr, num_features_per_image,
                                   rotate_features);
-
     md_stereo.T_i_j = T_0_1;
 
     Eigen::Matrix3d E;
     computeEssential(T_0_1, E);
 
+    // optical_flow
+    // curr Image and prev Image
+    // TODO: Consider each consecutive frame (currently skips a lot of frames)
+    // Currently frame to Keyframe, try frame to frame
+    if (projected_points.size() > 0) {
+      matchOptFlow(imgl, imgr, kdl, kdr, md_optical,
+                   feature_match_max_dist, feature_match_test_next_best);
+    }
+    // TODO: Is it supposed to be like this??
     matchDescriptors(kdl.corner_descriptors, kdr.corner_descriptors,
                      md_stereo.matches, feature_match_max_dist,
                      feature_match_test_next_best);
 
+    // GOTTA DO 3D
     findInliersEssential(kdl, kdr, calib_cam.intrinsics[0],
                          calib_cam.intrinsics[1], E, 1e-3, md_stereo);
+
+    // ---Modified
+
+    // Modified---
 
     std::cout << "KF Found " << md_stereo.inliers.size() << " stereo-matches."
               << std::endl;
@@ -832,7 +860,6 @@ bool next_step() {
                            projected_track_ids, match_max_dist_2d,
                            feature_match_max_dist, feature_match_test_next_best,
                            md);
-
     std::cout << "KF Found " << md.matches.size() << " matches." << std::endl;
 
     localize_camera(current_pose, calib_cam.intrinsics[0], kdl, landmarks,
@@ -857,10 +884,13 @@ bool next_step() {
     change_display_to_image(fcidr);
 
     compute_projections();
-
+    prevImageL = cv::Mat(imgl.h, imgl.w, CV_8U, imgl.ptr);
+    prevImageR = cv::Mat(imgr.h, imgr.w, CV_8U, imgr.ptr);
+    prevKDL = kdl;
+    prevKDR = kdr;
     current_frame++;
     return true;
-  } else {
+  }/* else {
     FrameCamId fcidl(current_frame, 0), fcidr(current_frame, 1);
 
     std::vector<Eigen::Vector2d, Eigen::aligned_allocator<Eigen::Vector2d>>
@@ -915,7 +945,7 @@ bool next_step() {
 
     current_frame++;
     return true;
-  }
+  }*/
 }
 
 // Compute reprojections for all landmark observations for visualization and
@@ -997,17 +1027,17 @@ void optimize() {
   cameras_opt = cameras;
   landmarks_opt = landmarks;
 
-  opt_running = true;
+//  opt_running = true;
 
-  opt_thread.reset(new std::thread([fid, ba_options] {
+//  opt_thread.reset(new std::thread([fid, ba_options] {
     std::set<FrameCamId> fixed_cameras = {{fid, 0}, {fid, 1}};
 
     bundle_adjustment(feature_corners, ba_options, fixed_cameras, calib_cam_opt,
                       cameras_opt, landmarks_opt);
 
-    opt_finished = true;
-    opt_running = false;
-  }));
+//    opt_finished = true;
+//    opt_running = false;
+//  }));
 
   // Update project info cache
   compute_projections();
