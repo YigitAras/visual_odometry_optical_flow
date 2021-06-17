@@ -38,6 +38,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <ceres/ceres.h>
 
+#include <pangolin/image/managed_image.h>
+
 #include <opengv/absolute_pose/CentralAbsoluteAdapter.hpp>
 #include <opengv/absolute_pose/methods.hpp>
 #include <opengv/relative_pose/CentralRelativeAdapter.hpp>
@@ -49,6 +51,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <visnav/serialization.h>
 
 #include <visnav/reprojection.h>
+#include <visnav/motion_cost.h>
 #include <visnav/local_parameterization_se3.hpp>
 
 #include <visnav/tracks.h>
@@ -303,6 +306,95 @@ struct BundleAdjustmentOptions {
   /// maximum number of solver iterations
   int max_num_iterations = 20;
 };
+
+void find_motion_consec(
+    const FrameCamId& fcid, const Corners& feature_corners,
+    const pangolin::ManagedImage<uint8_t>& img1,
+    const pangolin::ManagedImage<uint8_t>& img2,
+    std::unordered_map<FeatureId, Sophus::SE2d>& transforms) {
+  KeypointsData kd = feature_corners.at(fcid);
+  // KeypointsData kdl = feature_corners.at(fcidl2);
+
+  Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> eigen_img1;
+  Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> eigen_img2;
+
+  cv2eigen(cv::Mat(img1.h, img1.w, CV_8U, img1.ptr), eigen_img1);
+  cv2eigen(cv::Mat(img2.h, img2.w, CV_8U, img2.ptr), eigen_img2);
+
+  ceres::Problem problem;
+  int HALF_PATCH_SIZE = 3;
+  size_t patch_size = 0;
+  for (int x = -HALF_PATCH_SIZE; x < HALF_PATCH_SIZE + 1; x++) {
+    const int y_bound = sqrt(HALF_PATCH_SIZE * HALF_PATCH_SIZE - x * x);
+    for (int y = -y_bound; y < y_bound + 1; y++) {
+      patch_size++;
+    }
+  }
+
+  for (size_t i = 0; i < kd.corners.size(); i++) {
+    const Eigen::Vector2d p2d = kd.corners[i];
+    transforms[i] = Sophus::SE2d();
+
+    problem.AddParameterBlock(transforms[i].data(),
+                              Sophus::SE2d::num_parameters);
+
+    ceres::CostFunction* cost_function =
+        new ceres::NumericDiffCostFunction<MotionCostFunctor, ceres::CENTRAL, 1,
+                                           Sophus::SE2d::num_parameters>(
+            new MotionCostFunctor(p2d, eigen_img1, eigen_img2));
+    // problem.AddResidualBlock(cost_function, NULL, transforms[i].data());
+    problem.AddResidualBlock(cost_function, (new ceres::HuberLoss(1.0)),
+                             transforms[i].data());
+  }
+  // std::cout << "PATCH SIZE: " << patch_size << std::endl;
+  // std::cout << "-----------" << std::endl;
+
+  // Solve
+
+  ceres::Solver::Options ceres_options;
+  ceres_options.max_num_iterations = 30;
+  ceres_options.linear_solver_type = ceres::SPARSE_SCHUR;
+  ceres_options.num_threads = tbb::task_scheduler_init::default_num_threads();
+  ceres::Solver::Summary summary;
+  Solve(ceres_options, &problem, &summary);
+  switch (1) {
+    // 0: silent
+    case 1:
+      std::cout << summary.BriefReport() << std::endl;
+      break;
+    case 2:
+      std::cout << summary.FullReport() << std::endl;
+      break;
+  }
+}
+
+void find_transformed_matches(
+    const std::unordered_map<FeatureId, Sophus::SE2d>& i_j_ts,
+    const std::unordered_map<FeatureId, Sophus::SE2d>& j_i_ts,
+    const KeypointsData& kdi, const KeypointsData& kdj,
+    std::vector<std::pair<FeatureId, FeatureId>>& matches) {
+  // int num_matches = 0;
+  for (const auto& i_j_t : i_j_ts) {
+    FeatureId fid_ij = i_j_t.first;
+    Sophus::SE2d t_ij = i_j_t.second;
+    Eigen::Vector2d pij = kdi.corners[fid_ij];
+    Eigen::Vector2i td_pij = (t_ij * pij).cast<int>();
+
+    for (const auto& j_i_t : j_i_ts) {
+      FeatureId fid_ji = j_i_t.first;
+      Eigen::Vector2d pji = kdj.corners.at(fid_ji);
+      if (td_pij == pji.cast<int>()) {
+        Sophus::SE2d t_ji = j_i_t.second;
+        Eigen::Vector2i td_pji = (t_ji * pij).cast<int>();
+        if (td_pji == pij.cast<int>()) matches.emplace_back(fid_ij, fid_ji);
+      }
+    }
+    // std::cout << "INIT POINT: \n"
+    //           << pij.matrix() << "\nTRANSFORMED POINT: \n"
+    //           << td_pij.matrix() << std::endl;
+  }
+  // return num_matches;
+}
 
 // Run bundle adjustment to optimize cameras, points, and optionally intrinsics
 void bundle_adjustment(const Corners& feature_corners,

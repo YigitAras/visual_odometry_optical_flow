@@ -133,6 +133,10 @@ Landmarks landmarks_opt;
 /// landmark positions that were removed from the current map
 Landmarks old_landmarks;
 
+// SE2 transforms between consecutive frames
+std::unordered_map<FrameCamId, std::unordered_map<TrackId, Sophus::SE2d>>
+    transforms;
+
 /// cashed info on reprojected landmarks; recomputed every time time from
 /// cameras, landmarks, and feature_tracks; used for visualization and
 /// determining outliers; indexed by images
@@ -776,10 +780,97 @@ void load_data(const std::string& dataset_path, const std::string& calib_path) {
 
 // Execute next step in the overall odometry pipeline. Call this repeatedly
 // until it returns false for automatic execution.
+bool _next_step() {
+  if (current_frame >= int(images.size()) / NUM_CAMS) return false;
+
+  std::cout << "CHEKING OUT " << current_frame << std::endl
+            << int(images.size()) << std::endl
+            << NUM_CAMS << std::endl;
+
+  const Sophus::SE3d T_0_1 = calib_cam.T_i_c[0].inverse() * calib_cam.T_i_c[1];
+
+  // Sophus::SE2d sum_T = Sophus::SE2d();
+  // std::cout << "SE2 TRANSFORM " << sum_T.matrix() << std::endl;
+
+  take_keyframe = false;
+
+  FrameCamId fcidl(current_frame, 0), fcidr(current_frame, 1);
+
+  std::vector<Eigen::Vector2d, Eigen::aligned_allocator<Eigen::Vector2d>>
+      projected_points;
+  std::vector<TrackId> projected_track_ids;
+
+  project_landmarks(current_pose, calib_cam.intrinsics[0], landmarks,
+                    cam_z_threshold, projected_points, projected_track_ids);
+
+  std::cout << "KF Projected " << projected_track_ids.size() << " points."
+            << std::endl;
+
+  MatchData md_stereo;
+  KeypointsData kdl, kdr;
+
+  pangolin::ManagedImage<uint8_t> imgl = pangolin::LoadImage(images[fcidl]);
+  pangolin::ManagedImage<uint8_t> imgr = pangolin::LoadImage(images[fcidr]);
+
+  detectKeypointsAndDescriptors(imgl, kdl, num_features_per_image,
+                                rotate_features);
+  detectKeypointsAndDescriptors(imgr, kdr, num_features_per_image,
+                                rotate_features);
+
+  md_stereo.T_i_j = T_0_1;
+
+  Eigen::Matrix3d E;
+  computeEssential(T_0_1, E);
+
+  matchDescriptors(kdl.corner_descriptors, kdr.corner_descriptors,
+                   md_stereo.matches, feature_match_max_dist,
+                   feature_match_test_next_best);
+
+  findInliersEssential(kdl, kdr, calib_cam.intrinsics[0],
+                       calib_cam.intrinsics[1], E, 1e-3, md_stereo);
+
+  std::cout << "KF Found " << md_stereo.inliers.size() << " stereo-matches."
+            << std::endl;
+
+  feature_corners[fcidl] = kdl;
+  feature_corners[fcidr] = kdr;
+  feature_matches[std::make_pair(fcidl, fcidr)] = md_stereo;
+  std::unordered_map<FeatureId, Sophus::SE2d> i_j_transforms;
+  std::unordered_map<FeatureId, Sophus::SE2d> j_i_transforms;
+  std::unordered_map<FrameCamId, std::vector<std::pair<FeatureId, FeatureId>>>
+      matches;
+  if (0 < current_frame) {
+    FrameCamId p_fcidl(fcidl.frame_id - 1, 0);
+    pangolin::ManagedImage<uint8_t> p_imgl =
+        pangolin::LoadImage(images[p_fcidl]);
+    find_motion_consec(p_fcidl, feature_corners, p_imgl, imgl, i_j_transforms);
+    find_motion_consec(fcidl, feature_corners, imgl, p_imgl, j_i_transforms);
+
+    find_transformed_matches(i_j_transforms, j_i_transforms,
+                             feature_corners[p_fcidl], kdl, matches[p_fcidl]);
+    std::cout << "NUM KD: " << kdl.corners.size()
+              << "\nNUM MATCHEEESS: " << matches[p_fcidl].size() << std::endl;
+  }
+
+  // update image views
+  change_display_to_image(fcidl);
+  change_display_to_image(fcidr);
+
+  compute_projections();
+
+  current_frame++;
+  return true;
+}
+
 bool next_step() {
   if (current_frame >= int(images.size()) / NUM_CAMS) return false;
 
+  std::cout << "CHEKING OUT " << current_frame << std::endl
+            << int(images.size()) << std::endl
+            << NUM_CAMS << std::endl;
+
   const Sophus::SE3d T_0_1 = calib_cam.T_i_c[0].inverse() * calib_cam.T_i_c[1];
+  take_keyframe = true;
 
   if (take_keyframe) {
     take_keyframe = false;
