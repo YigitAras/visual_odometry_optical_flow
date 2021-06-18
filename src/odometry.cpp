@@ -780,12 +780,10 @@ void load_data(const std::string& dataset_path, const std::string& calib_path) {
 
 // Execute next step in the overall odometry pipeline. Call this repeatedly
 // until it returns false for automatic execution.
-bool _next_step() {
+bool next_step() {
   if (current_frame >= int(images.size()) / NUM_CAMS) return false;
 
-  std::cout << "CHEKING OUT " << current_frame << std::endl
-            << int(images.size()) << std::endl
-            << NUM_CAMS << std::endl;
+  std::cout << "CHEKING OUT " << current_frame << std::endl;
 
   const Sophus::SE3d T_0_1 = calib_cam.T_i_c[0].inverse() * calib_cam.T_i_c[1];
 
@@ -835,21 +833,19 @@ bool _next_step() {
   feature_corners[fcidl] = kdl;
   feature_corners[fcidr] = kdr;
   feature_matches[std::make_pair(fcidl, fcidr)] = md_stereo;
-  std::unordered_map<FeatureId, Sophus::SE2d> i_j_transforms;
-  std::unordered_map<FeatureId, Sophus::SE2d> j_i_transforms;
+  std::unordered_map<FeatureId, Eigen::AffineCompact2f> i_j_transforms;
+  // std::unordered_map<FeatureId, Eigen::AffineCompact2f> j_i_transforms;
   std::unordered_map<FrameCamId, std::vector<std::pair<FeatureId, FeatureId>>>
       matches;
-  if (0 < current_frame) {
-    FrameCamId p_fcidl(fcidl.frame_id - 1, 0);
-    pangolin::ManagedImage<uint8_t> p_imgl =
-        pangolin::LoadImage(images[p_fcidl]);
-    find_motion_consec(p_fcidl, feature_corners, p_imgl, imgl, i_j_transforms);
-    find_motion_consec(fcidl, feature_corners, imgl, p_imgl, j_i_transforms);
+  if (current_frame < int(images.size() - 1)) {
+    FrameCamId n_fcidl(fcidl.frame_id + 1, 0);
+    pangolin::ManagedImage<uint8_t> n_imgl =
+        pangolin::LoadImage(images[n_fcidl]);
 
-    find_transformed_matches(i_j_transforms, j_i_transforms,
-                             feature_corners[p_fcidl], kdl, matches[p_fcidl]);
+    find_motion_consec(fcidl, feature_corners, imgl, n_imgl, i_j_transforms);
+
     std::cout << "NUM KD: " << kdl.corners.size()
-              << "\nNUM MATCHEEESS: " << matches[p_fcidl].size() << std::endl;
+              << "\nNUM MATCHEEESS: " << i_j_transforms.size() << std::endl;
   }
 
   // update image views
@@ -862,7 +858,7 @@ bool _next_step() {
   return true;
 }
 
-bool next_step() {
+bool _next_step() {
   if (current_frame >= int(images.size()) / NUM_CAMS) return false;
 
   std::cout << "CHEKING OUT " << current_frame << std::endl
