@@ -52,11 +52,15 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <visnav/reprojection.h>
 #include <visnav/motion_cost.h>
+#include <visnav/patch.h>
+#include <visnav/patterns.h>
 #include <visnav/local_parameterization_se3.hpp>
 
 #include <visnav/tracks.h>
 
 namespace visnav {
+
+typedef OpticalFlowPatch<float, Pattern50<float>> PatchT;
 
 // save map with all features and matches
 void save_map_file(const std::string& map_path, const Corners& feature_corners,
@@ -307,86 +311,178 @@ struct BundleAdjustmentOptions {
   int max_num_iterations = 20;
 };
 
+bool trackPoint(const pangolin::ManagedImage<uint8_t>& img_2, const PatchT& dp,
+                Eigen::AffineCompact2f& transform) {
+  bool patch_valid = true;
+  int max_iterations = 20;
+
+  for (int iteration = 0; patch_valid && iteration < max_iterations;
+       iteration++) {
+    typename PatchT::VectorP res;
+
+    typename PatchT::Matrix2P transformed_pat =
+        transform.linear().matrix() * dp.pattern2;
+    transformed_pat.colwise() += transform.translation();
+
+    bool valid = dp.residual(img_2, transformed_pat, res);
+
+    if (valid) {
+      typename PatchT::Vector3 inc = -dp.H_se2_inv_J_se2_T * res;
+      // std::cout << "Here..." << dp.H_se2_inv_J_se2_T << std::endl;
+      // std::cout << "Here..." << res << std::endl;
+      transform *= Sophus::SE2f::exp(inc).matrix();
+      // std::cout << "... And there" << std::endl;
+      const int filter_margin = 3;
+
+      if (!img_2.InBounds(transform.translation(), filter_margin))
+        patch_valid = false;
+    } else {
+      patch_valid = false;
+    }
+    // std::cout << "PATCH VALID: " << patch_valid << std::endl;
+  }
+
+  return patch_valid;
+}
+
 void find_motion_consec(
     const FrameCamId& fcid, const Corners& feature_corners,
     const pangolin::ManagedImage<uint8_t>& img1,
     const pangolin::ManagedImage<uint8_t>& img2,
-    std::unordered_map<FeatureId, Sophus::SE2d>& transforms) {
+    std::unordered_map<FeatureId, Eigen::AffineCompact2f>& transforms) {
   KeypointsData kd = feature_corners.at(fcid);
+  float optical_flow_max_recovered_dist2 = 0.04;
   // KeypointsData kdl = feature_corners.at(fcidl2);
 
-  Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> eigen_img1;
-  Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> eigen_img2;
+  // Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> eigen_img1;
+  // Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> eigen_img2;
 
-  cv2eigen(cv::Mat(img1.h, img1.w, CV_8U, img1.ptr), eigen_img1);
-  cv2eigen(cv::Mat(img2.h, img2.w, CV_8U, img2.ptr), eigen_img2);
-
-  ceres::Problem problem;
-  int HALF_PATCH_SIZE = 3;
-  size_t patch_size = 0;
-  for (int x = -HALF_PATCH_SIZE; x < HALF_PATCH_SIZE + 1; x++) {
-    const int y_bound = sqrt(HALF_PATCH_SIZE * HALF_PATCH_SIZE - x * x);
-    for (int y = -y_bound; y < y_bound + 1; y++) {
-      patch_size++;
-    }
-  }
-
+  // cv2eigen(cv::Mat(img1.h, img1.w, CV_8U, img1.ptr), eigen_img1);
+  // cv2eigen(cv::Mat(img2.h, img2.w, CV_8U, img2.ptr), eigen_img2);
+  // int ind = 0;
+  // const int HALF_PATCH_SIZE = 3;
+  // for (int x = -HALF_PATCH_SIZE; x < HALF_PATCH_SIZE + 1; x++) {
+  //   const int y_bound = sqrt(HALF_PATCH_SIZE * HALF_PATCH_SIZE - x * x);
+  //   for (int y = -y_bound; y < y_bound + 1; y++) {
+  //     ind++;
+  //   }
+  //   ind++;
+  // }
+  // std::cout << "INDIEEEE: " << ind << std::endl;
   for (size_t i = 0; i < kd.corners.size(); i++) {
     const Eigen::Vector2d p2d = kd.corners[i];
-    transforms[i] = Sophus::SE2d();
+    Eigen::AffineCompact2f transform_1 = Eigen::AffineCompact2f();
+    transform_1.setIdentity();
+    transform_1.translation() += p2d.cast<float>();
+    Eigen::AffineCompact2f transform_2 = transform_1;
+    // std::cout << "BEFORE:\n" << i << std::endl;
+    PatchT patch(img1, transform_1.translation());
 
-    problem.AddParameterBlock(transforms[i].data(),
-                              Sophus::SE2d::num_parameters);
+    transform_2.linear().setIdentity();
+    bool valid = trackPoint(img2, patch, transform_2);
+    transform_2.linear() = transform_1.linear() * transform_2.linear();
+    // std::cout << "AFTER:\n" << i << std::endl;
+    // std::cout << "NEW TRANSFORMS:\n" << transforms[i].matrix() << std::endl;
 
-    ceres::CostFunction* cost_function =
-        new ceres::NumericDiffCostFunction<MotionCostFunctor, ceres::CENTRAL, 1,
-                                           Sophus::SE2d::num_parameters>(
-            new MotionCostFunctor(p2d, eigen_img1, eigen_img2));
-    // problem.AddResidualBlock(cost_function, NULL, transforms[i].data());
-    problem.AddResidualBlock(cost_function, (new ceres::HuberLoss(1.0)),
-                             transforms[i].data());
+    if (valid) {
+      Eigen::AffineCompact2f transform_1_recovered = transform_2;
+      PatchT patch2(img2, transform_2.translation());
+
+      transform_1_recovered.linear().setIdentity();
+      valid = trackPoint(img1, patch2, transform_1_recovered);
+      transform_1_recovered.linear() =
+          transform_2.linear() * transform_1_recovered.linear();
+
+      if (valid) {
+        float dist2 =
+            (transform_1.translation() - transform_1_recovered.translation())
+                .squaredNorm();
+
+        if (dist2 < optical_flow_max_recovered_dist2) {
+          transforms[i] = transform_2;
+        }
+      }
+    }
+
+    // problem.AddParameterBlock(transforms[i].data(),
+    //                           Sophus::SE2d::num_parameters);
+
+    // ceres::CostFunction* cost_function =
+    //     new ceres::NumericDiffCostFunction<MotionCostFunctor, ceres::CENTRAL,
+    //     1,
+    //                                        Sophus::SE2d::num_parameters>(
+    //         new MotionCostFunctor(p2d, eigen_img1, eigen_img2));
+    // // problem.AddResidualBlock(cost_function, NULL, transforms[i].data());
+    // problem.AddResidualBlock(cost_function, (new ceres::HuberLoss(1.0)),
+    //                          transforms[i].data());
   }
-  // std::cout << "PATCH SIZE: " << patch_size << std::endl;
-  // std::cout << "-----------" << std::endl;
 
-  // Solve
+  // ceres::Problem problem;
+  // int HALF_PATCH_SIZE = 3;
+  // size_t patch_size = 0;
+  // for (int x = -HALF_PATCH_SIZE; x < HALF_PATCH_SIZE + 1; x++) {
+  //   const int y_bound = sqrt(HALF_PATCH_SIZE * HALF_PATCH_SIZE - x * x);
+  //   for (int y = -y_bound; y < y_bound + 1; y++) {
+  //     patch_size++;
+  //   }
+  // }
 
-  ceres::Solver::Options ceres_options;
-  ceres_options.max_num_iterations = 30;
-  ceres_options.linear_solver_type = ceres::SPARSE_SCHUR;
-  ceres_options.num_threads = tbb::task_scheduler_init::default_num_threads();
-  ceres::Solver::Summary summary;
-  Solve(ceres_options, &problem, &summary);
-  switch (1) {
-    // 0: silent
-    case 1:
-      std::cout << summary.BriefReport() << std::endl;
-      break;
-    case 2:
-      std::cout << summary.FullReport() << std::endl;
-      break;
-  }
+  // for (size_t i = 0; i < kd.corners.size(); i++) {
+  //   const Eigen::Vector2d p2d = kd.corners[i];
+  //   transforms[i] = Sophus::SE2d();
+
+  //   problem.AddParameterBlock(transforms[i].data(),
+  //                             Sophus::SE2d::num_parameters);
+
+  //   ceres::CostFunction* cost_function =
+  //       new ceres::NumericDiffCostFunction<MotionCostFunctor, ceres::CENTRAL,
+  //       1,
+  //                                          Sophus::SE2d::num_parameters>(
+  //           new MotionCostFunctor(p2d, eigen_img1, eigen_img2));
+  //   // problem.AddResidualBlock(cost_function, NULL, transforms[i].data());
+  //   problem.AddResidualBlock(cost_function, (new ceres::HuberLoss(1.0)),
+  //                            transforms[i].data());
+  // }
+  // // std::cout << "PATCH SIZE: " << patch_size << std::endl;
+  // // std::cout << "-----------" << std::endl;
+
+  // // Solve
+
+  // ceres::Solver::Options ceres_options;
+  // ceres_options.max_num_iterations = 30;
+  // ceres_options.linear_solver_type = ceres::SPARSE_SCHUR;
+  // ceres_options.num_threads =
+  // tbb::task_scheduler_init::default_num_threads(); ceres::Solver::Summary
+  // summary; Solve(ceres_options, &problem, &summary); switch (1) {
+  //   // 0: silent
+  //   case 1:
+  //     std::cout << summary.BriefReport() << std::endl;
+  //     break;
+  //   case 2:
+  //     std::cout << summary.FullReport() << std::endl;
+  //     break;
+  // }
 }
 
 void find_transformed_matches(
-    const std::unordered_map<FeatureId, Sophus::SE2d>& i_j_ts,
-    const std::unordered_map<FeatureId, Sophus::SE2d>& j_i_ts,
+    const std::unordered_map<FeatureId, Eigen::AffineCompact2f>& i_j_ts,
+    const std::unordered_map<FeatureId, Eigen::AffineCompact2f>& j_i_ts,
     const KeypointsData& kdi, const KeypointsData& kdj,
     std::vector<std::pair<FeatureId, FeatureId>>& matches) {
   // int num_matches = 0;
   for (const auto& i_j_t : i_j_ts) {
     FeatureId fid_ij = i_j_t.first;
-    Sophus::SE2d t_ij = i_j_t.second;
-    Eigen::Vector2d pij = kdi.corners[fid_ij];
-    Eigen::Vector2i td_pij = (t_ij * pij).cast<int>();
+    Eigen::AffineCompact2f t_ij = i_j_t.second;
+    Eigen::Vector2f pij = kdi.corners[fid_ij].cast<float>();
+    Eigen::Vector2f td_pij = (t_ij * pij);
 
     for (const auto& j_i_t : j_i_ts) {
       FeatureId fid_ji = j_i_t.first;
-      Eigen::Vector2d pji = kdj.corners.at(fid_ji);
-      if (td_pij == pji.cast<int>()) {
-        Sophus::SE2d t_ji = j_i_t.second;
-        Eigen::Vector2i td_pji = (t_ji * pij).cast<int>();
-        if (td_pji == pij.cast<int>()) matches.emplace_back(fid_ij, fid_ji);
+      Eigen::Vector2f pji = kdj.corners.at(fid_ji).cast<float>();
+      if (td_pij == pji) {
+        Eigen::AffineCompact2f t_ji = j_i_t.second;
+        Eigen::Vector2f td_pji = (t_ji * pij.cast<float>());
+        if (td_pji == pij) matches.emplace_back(fid_ij, fid_ji);
       }
     }
     // std::cout << "INIT POINT: \n"
