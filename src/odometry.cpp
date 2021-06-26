@@ -91,10 +91,11 @@ constexpr int NUM_CAMS = 2;
 /// Variables
 ///////////////////////////////////////////////////////////////////////////////
 
-int current_frame = 0;
+int current_frame = 1;
 Sophus::SE3d current_pose;
 bool take_keyframe = true;
 TrackId next_landmark_id = 0;
+bool first_step = true;
 
 std::atomic<bool> opt_running{false};
 std::atomic<bool> opt_finished{false};
@@ -796,10 +797,21 @@ void load_data(const std::string& dataset_path, const std::string& calib_path) {
 bool next_step() {
   if (current_frame >= int(images.size()) / NUM_CAMS) return false;
 
+
   // skipping
   if (current_frame < 150) {
     current_frame = 150;
     return true;
+  }
+
+  if(first_step){
+    FrameCamId fcidl_prev(current_frame-1, 0);
+    pangolin::ManagedImage<uint8_t> imgl_prev = pangolin::LoadImage(images[fcidl_prev]);
+    cv::Mat img_cv(imgl_prev.h, imgl_prev.w, CV_8U, imgl_prev.ptr);
+    prevImageL = img_cv;
+    detectKeypointsAndDescriptors(imgl_prev, prevKDL, num_features_per_image,
+                                rotate_features);
+    first_step = false;
   }
 
   const Sophus::SE3d T_0_1 = calib_cam.T_i_c[0].inverse() * calib_cam.T_i_c[1];
@@ -821,12 +833,22 @@ bool next_step() {
 
   KeypointsData kdl, kdr;
 
+
+
   pangolin::ManagedImage<uint8_t> imgl = pangolin::LoadImage(images[fcidl]);
   pangolin::ManagedImage<uint8_t> imgr = pangolin::LoadImage(images[fcidr]);
 
-  detectKeypointsAndDescriptors(imgl, kdl, num_features_per_image,
+  // THE TRACKERINO SIZO CHECKERINO
+  // If the benis size big then continueT
+ 
+  if(prevKDL.corners.size() < 40){
+    FrameCamId fcidl_prev(current_frame-1, 0);
+    pangolin::ManagedImage<uint8_t> imgl = pangolin::LoadImage(images[fcidl_prev]);
+    detectKeypointsAndDescriptors(imgl, prevKDL, num_features_per_image,
                                 rotate_features);
-  detectKeypointsAndDescriptors(imgr, kdr, num_features_per_image,
+  }
+
+   detectKeypointsAndDescriptors(imgr, kdr, num_features_per_image,
                                 rotate_features);
   md_stereo.T_i_j = T_0_1;
 
@@ -836,17 +858,17 @@ bool next_step() {
   // optical_flow
   // curr Image and prev Image
   // Currently frame to Keyframe, try frame to frame
-  if (projected_points.size() > 0) {
+  //if (projected_points.size() > 0) {
     matchOptFlow(imgl, imgr, kdl, kdr, md_optical, relative_pose_ransac_thresh,
-                 relative_pose_ransac_min_inliers, calib_cam);
-  }
+                 relative_pose_ransac_min_inliers, calib_cam, 0.5);
+  //}
 
   // Soldan saga bam gum opt flow matching
-  matchDescriptors(kdl.corner_descriptors, kdr.corner_descriptors,
-                   md_stereo.matches, feature_match_max_dist,
-                   feature_match_test_next_best);
+  // matchDescriptors(kdl.corner_descriptors, kdr.corner_descriptors,
+  //                  md_stereo.matches, feature_match_max_dist,
+  //                  feature_match_test_next_best);
 
-  matchLeftRightOptFlow(imgl, imgr, kdl, kdr, md_stereo.matches, 3);
+  matchLeftRightOptFlow(imgl, imgr, kdl, kdr, md_stereo.matches, 0.5);
   findInliersEssential(kdl, kdr, calib_cam.intrinsics[0],
                        calib_cam.intrinsics[1], E, 1e-3, md_stereo);
 
