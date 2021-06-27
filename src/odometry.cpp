@@ -49,6 +49,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <pangolin/image/typed_image.h>
 #include <pangolin/pangolin.h>
 
+#include <opencv2/core.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/highgui.hpp>
+
 #include <CLI/CLI.hpp>
 
 #include <visnav/common_types.h>
@@ -138,6 +142,9 @@ Landmarks old_landmarks;
 // SE2 transforms between consecutive frames
 std::unordered_map<FrameCamId, std::unordered_map<TrackId, Sophus::SE2d>>
     transforms;
+
+std::unordered_map<FrameCamId, std::vector<std::pair<FeatureId, FeatureId>>>
+    matches;
 
 visnav::ManagedImagePyr<uint8_t> old_pyramid, pyramid_r, pyramid_n;
 
@@ -782,6 +789,36 @@ void load_data(const std::string& dataset_path, const std::string& calib_path) {
   show_frame2.Meta().gui_changed = true;
 }
 
+void visualize(const pangolin::ManagedImage<uint8_t>& _img,
+               const pangolin::ManagedImage<uint8_t>& _img_next,
+               const KeypointsData& kdl, const KeypointsData& kdn,
+               std::vector<std::pair<int, int>> matches) {
+  cv::Mat imageL(_img.h, _img.w, CV_8U, _img.ptr);
+  cv::Mat nextImageL(_img_next.h, _img_next.w, CV_8U, _img_next.ptr);
+  cv::Mat out;
+  cv::hconcat(imageL, nextImageL,
+              out);  // Syntax-> hconcat(source1,source2,destination);
+  int checkyboi = 0;
+
+  for (const auto& i_j : matches) {
+    if (checkyboi % 5 == 0) {
+      cv::Point src((int)kdl.corners[i_j.first].x(),
+                    (int)kdl.corners[i_j.first].y());
+      cv::Point trgt(kdn.corners[i_j.second].x() + nextImageL.cols,
+                     kdn.corners[i_j.second].y());
+
+      int thickness = 1;
+      int lineType = cv::LINE_8;
+      cv::line(out, src, trgt, cv::Scalar(255, 0, 0), thickness, lineType);
+    }
+    checkyboi++;
+  }
+
+  cv::imwrite("Matches", out);
+  // cv::waitKey(0);
+  // std::cout << prevPointsL.size() << " and " << testL.size() << std::endl;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 /// Here the algorithmically interesting implementation begins
 ///////////////////////////////////////////////////////////////////////////////
@@ -798,8 +835,6 @@ bool next_step() {
   // Sophus::SE2d sum_T = Sophus::SE2d();
   // std::cout << "SE2 TRANSFORM " << sum_T.matrix() << std::endl;
 
-  take_keyframe = false;
-
   FrameCamId fcidl(current_frame, 0), fcidr(current_frame, 1);
 
   std::vector<Eigen::Vector2d, Eigen::aligned_allocator<Eigen::Vector2d>>
@@ -813,7 +848,7 @@ bool next_step() {
   //           << std::endl;
 
   MatchData md_stereo;
-  KeypointsData kdl, kdr;
+  KeypointsData kdl, kdr, kdn;
 
   pangolin::ManagedImage<uint8_t> _imgl = pangolin::LoadImage(images[fcidl]);
   pangolin::ManagedImage<uint8_t> _imgr = pangolin::LoadImage(images[fcidr]);
@@ -841,8 +876,12 @@ bool next_step() {
   old_pyramid.setFromImage(imgl, num_levels);
   pyramid_r.setFromImage(imgr, num_levels);
 
-  detectKeypointsAndDescriptors(imgl, kdl, num_features_per_image,
-                                rotate_features);
+  if (feature_corners[fcidl].corners.empty() &&
+      feature_corners[fcidl].corners.size() < 100)
+    detectKeypointsAndDescriptors(imgl, kdl, num_features_per_image,
+                                  rotate_features);
+  else
+    kdl = feature_corners[fcidl];
   // detectKeypointsAndDescriptors(imgr, kdr, num_features_per_image,
   //                               rotate_features);
 
@@ -862,8 +901,8 @@ bool next_step() {
 
   // std::cout << "NUM CORNERS KDL" << kdl.corners.size() << " stereo-matches."
   //           << std::endl;
-  std::cout << "OPTICAL BABE Found " << l_r_transforms.size()
-            << " stereo-matches." << std::endl;
+  // std::cout << "OPTICAL BABE Found " << l_r_transforms.size()
+  //           << " stereo-matches." << std::endl;
 
   findInliersEssential(kdl, kdr, calib_cam.intrinsics[0],
                        calib_cam.intrinsics[1], E, 1e-3, md_stereo);
@@ -876,8 +915,7 @@ bool next_step() {
   feature_matches[std::make_pair(fcidl, fcidr)] = md_stereo;
   std::unordered_map<FeatureId, Eigen::AffineCompact2f> i_j_transforms;
   // std::unordered_map<FeatureId, Eigen::AffineCompact2f> j_i_transforms;
-  std::unordered_map<FrameCamId, std::vector<std::pair<FeatureId, FeatureId>>>
-      matches;
+
   if (current_frame < int(images.size() - 1)) {
     FrameCamId n_fcidl(fcidl.frame_id + 1, 0);
     pangolin::ManagedImage<uint8_t> _n_imgl =
@@ -899,6 +937,10 @@ bool next_step() {
 
     std::cout << "NUM KD: " << kdl.corners.size()
               << "\nNUM MATCHEEESS: " << i_j_transforms.size() << std::endl;
+    match_optical(kdn, i_j_transforms, matches[fcidl]);
+    computeAngles(n_imgl, kdn, rotate_features);
+    computeDescriptors(n_imgl, kdn);
+    feature_corners[n_fcidl] = kdn;
   }
 
   // update image views
