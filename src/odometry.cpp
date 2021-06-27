@@ -801,7 +801,7 @@ void visualize(const pangolin::ManagedImage<uint8_t>& _img,
   int checkyboi = 0;
 
   for (const auto& i_j : matches) {
-    if (checkyboi % 5 == 0) {
+    if (checkyboi % 10 == 0) {
       cv::Point src((int)kdl.corners[i_j.first].x(),
                     (int)kdl.corners[i_j.first].y());
       cv::Point trgt(kdn.corners[i_j.second].x() + nextImageL.cols,
@@ -814,7 +814,7 @@ void visualize(const pangolin::ManagedImage<uint8_t>& _img,
     checkyboi++;
   }
 
-  cv::imwrite("Matches", out);
+  cv::imwrite("Matches.png", out);
   // cv::waitKey(0);
   // std::cout << prevPointsL.size() << " and " << testL.size() << std::endl;
 }
@@ -876,8 +876,8 @@ bool next_step() {
   old_pyramid.setFromImage(imgl, num_levels);
   pyramid_r.setFromImage(imgr, num_levels);
 
-  if (feature_corners[fcidl].corners.empty() &&
-      feature_corners[fcidl].corners.size() < 100)
+  if (feature_corners[fcidl].corners.empty() ||
+      (feature_corners[fcidl].corners.size() < 100))
     detectKeypointsAndDescriptors(imgl, kdl, num_features_per_image,
                                   rotate_features);
   else
@@ -941,6 +941,8 @@ bool next_step() {
     computeAngles(n_imgl, kdn, rotate_features);
     computeDescriptors(n_imgl, kdn);
     feature_corners[n_fcidl] = kdn;
+
+    //visualize(_imgl, _n_imgl, kdl, kdn, matches[fcidl]);
   }
 
   // update image views
