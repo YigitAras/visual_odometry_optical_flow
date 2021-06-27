@@ -139,8 +139,9 @@ Landmarks old_landmarks;
 std::unordered_map<FrameCamId, std::unordered_map<TrackId, Sophus::SE2d>>
     transforms;
 
-std::shared_ptr<std::vector<visnav::ManagedImagePyr<uint16_t>>> old_pyramid,
-    pyramid;
+visnav::ManagedImagePyr<uint8_t> old_pyramid, pyramid_r, pyramid_n;
+
+size_t num_levels = 3;
 
 /// cashed info on reprojected landmarks; recomputed every time time from
 /// cameras, landmarks, and feature_tracks; used for visualization and
@@ -822,14 +823,28 @@ bool next_step() {
   imgr.CopyFrom(
       visnav::Image<uint8_t>(_imgr.ptr, _imgr.w, _imgr.h, _imgr.pitch));
 
+  // old_pyramid.reset(new std::vector<visnav::ManagedImagePyr<uint8_t>>);
+  // old_pyramid->resize(calib_cam.intrinsics.size());
+  // // pyramid.setFromImage()
+
+  // for (size_t i = 0; i < calib_cam.intrinsics.size(); i++) {
+  //   old_pyramid->at(i).setFromImage(imgl, num_levels);
+  // }
+
   // pyramid.reset(new std::vector<visnav::ManagedImagePyr<uint8_t>>);
-  // pyramid->resize(calib.intrinsics.size());
+  // pyramid->resize(calib_cam.intrinsics.size());
   // pyramid.setFromImage()
+
+  // for (size_t i = 0; i < calib_cam.intrinsics.size(); i++) {
+  //   pyramid->at(i).setFromImage(imgr, num_levels);
+  // }
+  old_pyramid.setFromImage(imgl, num_levels);
+  pyramid_r.setFromImage(imgr, num_levels);
 
   detectKeypointsAndDescriptors(imgl, kdl, num_features_per_image,
                                 rotate_features);
-  detectKeypointsAndDescriptors(imgr, kdr, num_features_per_image,
-                                rotate_features);
+  // detectKeypointsAndDescriptors(imgr, kdr, num_features_per_image,
+  //                               rotate_features);
 
   md_stereo.T_i_j = T_0_1;
 
@@ -840,8 +855,10 @@ bool next_step() {
   //                  md_stereo.matches, feature_match_max_dist,
   //                  feature_match_test_next_best);
   std::unordered_map<FeatureId, Eigen::AffineCompact2f> l_r_transforms;
-  find_motion_consec(kdl, imgl, imgr, l_r_transforms);
+  find_motion_consec(kdl, old_pyramid, pyramid_r, num_levels, l_r_transforms);
   match_optical(kdr, l_r_transforms, md_stereo.matches);
+  computeAngles(imgr, kdr, rotate_features);
+  computeDescriptors(imgr, kdr);
 
   // std::cout << "NUM CORNERS KDL" << kdl.corners.size() << " stereo-matches."
   //           << std::endl;
@@ -869,8 +886,16 @@ bool next_step() {
     visnav::ManagedImage<uint8_t> n_imgl;
     n_imgl.CopyFrom(visnav::Image<uint8_t>(_n_imgl.ptr, _n_imgl.w, _n_imgl.h,
                                            _n_imgl.pitch));
+    // pyramid.reset(new std::vector<visnav::ManagedImagePyr<uint8_t>>);
+    // pyramid->resize(calib_cam.intrinsics.size());
+    // pyramid.setFromImage()
 
-    find_motion_consec(kdl, imgl, n_imgl, i_j_transforms);
+    // for (size_t i = 0; i < calib_cam.intrinsics.size(); i++) {
+    //   pyramid->at(i).setFromImage(n_imgl, num_levels);
+    // }
+    pyramid_n.setFromImage(n_imgl, num_levels);
+
+    find_motion_consec(kdl, old_pyramid, pyramid_n, num_levels, i_j_transforms);
 
     std::cout << "NUM KD: " << kdl.corners.size()
               << "\nNUM MATCHEEESS: " << i_j_transforms.size() << std::endl;

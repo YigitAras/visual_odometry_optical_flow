@@ -36,14 +36,14 @@ struct OpticalFlowPatch {
 
   OpticalFlowPatch() { mean = 0; }
 
-  OpticalFlowPatch(const visnav::ManagedImage<uint8_t>& img,
+  OpticalFlowPatch(const visnav::Image<const uint8_t>& img,
                    const Vector2& pos) {
     // std::cout << "BEFORE:\n" << std::endl;
     setFromImage(img, pos);
     // std::cout << "AFTER:\n" << std::endl;
   }
 
-  void setFromImage(const visnav::ManagedImage<uint8_t>& img,
+  void setFromImage(const visnav::Image<const uint8_t>& img,
                     const Vector2& pos) {
     // std::cout << "0 IS THIS ABORT?" << std::endl;
     this->pos = pos;
@@ -67,7 +67,7 @@ struct OpticalFlowPatch {
     for (int i = 0; i < PATTERN_SIZE; i++) {
       Vector2 p = pos + pattern2.col(i);
       if (img.InBounds(p.x(), p.y(), 3)) {
-        Vector3 valGrad = interpGrad(img, p.x(), p.y());
+        Vector3 valGrad = img.interpGrad<Scalar>(p.x(), p.y());
         data[i] = valGrad[0];
         sum += valGrad[0];
         grad.row(i) = valGrad.template tail<2>();
@@ -115,7 +115,7 @@ struct OpticalFlowPatch {
     // std::cout << "5 IS THIS ABORT?" << std::endl;
   }
 
-  inline bool residual(const visnav::ManagedImage<uint8_t>& img,
+  inline bool residual(const visnav::Image<const uint8_t>& img,
                        const Matrix2P& transformed_pattern,
                        VectorP& residual) const {
     Scalar sum = 0;
@@ -126,7 +126,7 @@ struct OpticalFlowPatch {
       Vector2 p(transformed_pattern.col(i));
 
       if (img.InBounds(p.x(), p.y(), 3)) {
-        residual[i] = interp(img, p.x(), p.y());
+        residual[i] = img.interp<Scalar>(p.x(), p.y());
         sum += residual[i];
         num_valid_points++;
       } else {
@@ -150,80 +150,82 @@ struct OpticalFlowPatch {
     return num_residuals > PATTERN_SIZE / 2;
   }
 
-  Eigen::Matrix<Scalar, 3, 1> interpGrad(
-      const visnav::ManagedImage<uint8_t>& img, Scalar x, Scalar y) const {
-    // static_assert(std::is_floating_point_v<Scalar>,
-    //               "interpolation / gradient only makes sense "
-    //               "for floating point result type");
+  // Eigen::Matrix<Scalar, 3, 1> interpGrad(const visnav::Image<uint8_t>& img,
+  //                                        Scalar x, Scalar y) const {
+  //   // static_assert(std::is_floating_point_v<Scalar>,
+  //   //               "interpolation / gradient only makes sense "
+  //   //               "for floating point result type");
 
-    int ix = x;
-    int iy = y;
+  //   int ix = x;
+  //   int iy = y;
 
-    Scalar dx = x - ix;
-    Scalar dy = y - iy;
+  //   Scalar dx = x - ix;
+  //   Scalar dy = y - iy;
 
-    Scalar ddx = Scalar(1.0) - dx;
-    Scalar ddy = Scalar(1.0) - dy;
+  //   Scalar ddx = Scalar(1.0) - dx;
+  //   Scalar ddy = Scalar(1.0) - dy;
 
-    Eigen::Matrix<Scalar, 3, 1> res;
+  //   Eigen::Matrix<Scalar, 3, 1> res;
 
-    const Scalar& px0y0 = img(ix, iy);
-    const Scalar& px1y0 = img(ix + 1, iy);
-    const Scalar& px0y1 = img(ix, iy + 1);
-    const Scalar& px1y1 = img(ix + 1, iy + 1);
+  //   const Scalar& px0y0 = img(ix, iy);
+  //   const Scalar& px1y0 = img(ix + 1, iy);
+  //   const Scalar& px0y1 = img(ix, iy + 1);
+  //   const Scalar& px1y1 = img(ix + 1, iy + 1);
 
-    res[0] = ddx * ddy * px0y0 + ddx * dy * px0y1 + dx * ddy * px1y0 +
-             dx * dy * px1y1;
+  //   res[0] = ddx * ddy * px0y0 + ddx * dy * px0y1 + dx * ddy * px1y0 +
+  //            dx * dy * px1y1;
 
-    const Scalar& pxm1y0 = img(ix - 1, iy);
-    const Scalar& pxm1y1 = img(ix - 1, iy + 1);
+  //   const Scalar& pxm1y0 = img(ix - 1, iy);
+  //   const Scalar& pxm1y1 = img(ix - 1, iy + 1);
 
-    Scalar res_mx = ddx * ddy * pxm1y0 + ddx * dy * pxm1y1 + dx * ddy * px0y0 +
-                    dx * dy * px0y1;
+  //   Scalar res_mx = ddx * ddy * pxm1y0 + ddx * dy * pxm1y1 + dx * ddy * px0y0
+  //   +
+  //                   dx * dy * px0y1;
 
-    const Scalar& px2y0 = img(ix + 2, iy);
-    const Scalar& px2y1 = img(ix + 2, iy + 1);
+  //   const Scalar& px2y0 = img(ix + 2, iy);
+  //   const Scalar& px2y1 = img(ix + 2, iy + 1);
 
-    Scalar res_px = ddx * ddy * px1y0 + ddx * dy * px1y1 + dx * ddy * px2y0 +
-                    dx * dy * px2y1;
+  //   Scalar res_px = ddx * ddy * px1y0 + ddx * dy * px1y1 + dx * ddy * px2y0 +
+  //                   dx * dy * px2y1;
 
-    res[1] = Scalar(0.5) * (res_px - res_mx);
+  //   res[1] = Scalar(0.5) * (res_px - res_mx);
 
-    const Scalar& px0ym1 = img(ix, iy - 1);
-    const Scalar& px1ym1 = img(ix + 1, iy - 1);
+  //   const Scalar& px0ym1 = img(ix, iy - 1);
+  //   const Scalar& px1ym1 = img(ix + 1, iy - 1);
 
-    Scalar res_my = ddx * ddy * px0ym1 + ddx * dy * px0y0 + dx * ddy * px1ym1 +
-                    dx * dy * px1y0;
+  //   Scalar res_my = ddx * ddy * px0ym1 + ddx * dy * px0y0 + dx * ddy * px1ym1
+  //   +
+  //                   dx * dy * px1y0;
 
-    const Scalar& px0y2 = img(ix, iy + 2);
-    const Scalar& px1y2 = img(ix + 1, iy + 2);
+  //   const Scalar& px0y2 = img(ix, iy + 2);
+  //   const Scalar& px1y2 = img(ix + 1, iy + 2);
 
-    Scalar res_py = ddx * ddy * px0y1 + ddx * dy * px0y2 + dx * ddy * px1y1 +
-                    dx * dy * px1y2;
+  //   Scalar res_py = ddx * ddy * px0y1 + ddx * dy * px0y2 + dx * ddy * px1y1 +
+  //                   dx * dy * px1y2;
 
-    res[2] = Scalar(0.5) * (res_py - res_my);
+  //   res[2] = Scalar(0.5) * (res_py - res_my);
 
-    return res;
-  }
+  //   return res;
+  // }
 
-  Scalar interp(const visnav::ManagedImage<uint8_t>& img, Scalar x,
-                Scalar y) const {
-    // static_assert(std::is_floating_point_v<S>,
-    //               "interpolation / gradient only makes sense "
-    //               "for floating point result type");
+  // Scalar interp(const visnav::Image<uint8_t>& img, Scalar x, Scalar y) const
+  // {
+  //   // static_assert(std::is_floating_point_v<S>,
+  //   //               "interpolation / gradient only makes sense "
+  //   //               "for floating point result type");
 
-    int ix = x;
-    int iy = y;
+  //   int ix = x;
+  //   int iy = y;
 
-    Scalar dx = x - ix;
-    Scalar dy = y - iy;
+  //   Scalar dx = x - ix;
+  //   Scalar dy = y - iy;
 
-    Scalar ddx = Scalar(1.0) - dx;
-    Scalar ddy = Scalar(1.0) - dy;
+  //   Scalar ddx = Scalar(1.0) - dx;
+  //   Scalar ddy = Scalar(1.0) - dy;
 
-    return ddx * ddy * img(ix, iy) + ddx * dy * img(ix, iy + 1) +
-           dx * ddy * img(ix + 1, iy) + dx * dy * img(ix + 1, iy + 1);
-  }
+  //   return ddx * ddy * img(ix, iy) + ddx * dy * img(ix, iy + 1) +
+  //          dx * ddy * img(ix + 1, iy) + dx * dy * img(ix + 1, iy + 1);
+  // }
 
   Vector2 pos;
   VectorP data;  // negative if the point is not valid

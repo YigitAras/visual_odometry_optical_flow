@@ -38,8 +38,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <ceres/ceres.h>
 
-#include <pangolin/image/managed_image.h>
-
 #include <opengv/absolute_pose/CentralAbsoluteAdapter.hpp>
 #include <opengv/absolute_pose/methods.hpp>
 #include <opengv/relative_pose/CentralRelativeAdapter.hpp>
@@ -51,10 +49,12 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <visnav/serialization.h>
 
 #include <visnav/reprojection.h>
-#include <visnav/motion_cost.h>
+// #include <visnav/motion_cost.h>
+#include <sophus/se2.hpp>
 #include <visnav/patch.h>
 #include <visnav/patterns.h>
 #include <visnav/image/image.h>
+#include <visnav/image/image_pyr.h>
 #include <visnav/local_parameterization_se3.hpp>
 
 #include <visnav/tracks.h>
@@ -312,10 +312,10 @@ struct BundleAdjustmentOptions {
   int max_num_iterations = 20;
 };
 
-bool trackPoint(const visnav::ManagedImage<uint8_t>& img_2, const PatchT& dp,
-                Eigen::AffineCompact2f& transform) {
+bool trackPointAtLevel(const visnav::Image<const uint8_t>& img_2,
+                       const PatchT& dp, Eigen::AffineCompact2f& transform) {
   bool patch_valid = true;
-  int max_iterations = 50;
+  int max_iterations = 20;
 
   for (int iteration = 0; patch_valid && iteration < max_iterations;
        iteration++) {
@@ -346,9 +346,36 @@ bool trackPoint(const visnav::ManagedImage<uint8_t>& img_2, const PatchT& dp,
   return patch_valid;
 }
 
+bool trackPoint(const visnav::ManagedImagePyr<uint8_t>& old_pyr,
+                const visnav::ManagedImagePyr<uint8_t>& pyr,
+                const size_t& num_levels,
+                const Eigen::AffineCompact2f& old_transform,
+                Eigen::AffineCompact2f& transform) {
+  bool patch_valid = true;
+
+  transform.linear().setIdentity();
+
+  for (int level = num_levels; level >= 0 && patch_valid; level--) {
+    const float scale = 1 << level;  // bit shift
+
+    transform.translation() /= scale;
+
+    PatchT p(old_pyr.lvl(level), old_transform.translation() / scale);
+
+    // Perform tracking on current level
+    patch_valid &= trackPointAtLevel(pyr.lvl(level), p, transform);
+
+    transform.translation() *= scale;
+  }
+
+  transform.linear() = old_transform.linear() * transform.linear();
+
+  return patch_valid;
+}
+
 void find_motion_consec(
-    const KeypointsData& kd, const visnav::ManagedImage<uint8_t>& img1,
-    const visnav::ManagedImage<uint8_t>& img2,
+    const KeypointsData& kd, const visnav::ManagedImagePyr<uint8_t>& old_pyr,
+    const visnav::ManagedImagePyr<uint8_t>& pyr, const size_t& num_levels,
     std::unordered_map<FeatureId, Eigen::AffineCompact2f>& transforms) {
   float optical_flow_max_recovered_dist2 = 0.04;
   // KeypointsData kdl = feature_corners.at(fcidl2);
@@ -375,20 +402,21 @@ void find_motion_consec(
     transform_1.translation() += p2d.cast<float>();
     Eigen::AffineCompact2f transform_2 = transform_1;
     // std::cout << "BEFORE:\n" << i << std::endl;
-    PatchT patch(img1, transform_1.translation());
+    // PatchT patch(img1, transform_1.translation());
 
     transform_2.linear().setIdentity();
-    bool valid = trackPoint(img2, patch, transform_2);
+    bool valid = trackPoint(old_pyr, pyr, num_levels, transform_1, transform_2);
     transform_2.linear() = transform_1.linear() * transform_2.linear();
     // std::cout << "AFTER:\n" << i << std::endl;
     // std::cout << "NEW TRANSFORMS:\n" << transforms[i].matrix() << std::endl;
 
     if (valid) {
       Eigen::AffineCompact2f transform_1_recovered = transform_2;
-      PatchT patch2(img2, transform_2.translation());
+      // PatchT patch2(img2, transform_2.translation());
 
       transform_1_recovered.linear().setIdentity();
-      valid = trackPoint(img1, patch2, transform_1_recovered);
+      valid = trackPoint(pyr, old_pyr, num_levels, transform_2,
+                         transform_1_recovered);
       transform_1_recovered.linear() =
           transform_2.linear() * transform_1_recovered.linear();
 
