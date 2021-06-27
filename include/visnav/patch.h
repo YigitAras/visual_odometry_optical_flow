@@ -1,7 +1,8 @@
 #pragma once
 
 #include <Eigen/Dense>
-#include <pangolin/image/managed_image.h>
+// #include <pangolin/image/managed_image.h>
+#include <visnav/image/image.h>
 #include <visnav/patterns.h>
 
 namespace visnav {
@@ -35,14 +36,14 @@ struct OpticalFlowPatch {
 
   OpticalFlowPatch() { mean = 0; }
 
-  OpticalFlowPatch(const pangolin::ManagedImage<uint8_t>& img,
+  OpticalFlowPatch(const visnav::ManagedImage<uint8_t>& img,
                    const Vector2& pos) {
     // std::cout << "BEFORE:\n" << std::endl;
     setFromImage(img, pos);
     // std::cout << "AFTER:\n" << std::endl;
   }
 
-  void setFromImage(const pangolin::ManagedImage<uint8_t>& img,
+  void setFromImage(const visnav::ManagedImage<uint8_t>& img,
                     const Vector2& pos) {
     // std::cout << "0 IS THIS ABORT?" << std::endl;
     this->pos = pos;
@@ -114,7 +115,7 @@ struct OpticalFlowPatch {
     // std::cout << "5 IS THIS ABORT?" << std::endl;
   }
 
-  inline bool residual(const pangolin::ManagedImage<uint8_t>& img,
+  inline bool residual(const visnav::ManagedImage<uint8_t>& img,
                        const Matrix2P& transformed_pattern,
                        VectorP& residual) const {
     Scalar sum = 0;
@@ -150,7 +151,7 @@ struct OpticalFlowPatch {
   }
 
   Eigen::Matrix<Scalar, 3, 1> interpGrad(
-      const pangolin::ManagedImage<uint8_t>& img, Scalar x, Scalar y) const {
+      const visnav::ManagedImage<uint8_t>& img, Scalar x, Scalar y) const {
     // static_assert(std::is_floating_point_v<Scalar>,
     //               "interpolation / gradient only makes sense "
     //               "for floating point result type");
@@ -205,7 +206,7 @@ struct OpticalFlowPatch {
     return res;
   }
 
-  Scalar interp(const pangolin::ManagedImage<uint8_t>& img, Scalar x,
+  Scalar interp(const visnav::ManagedImage<uint8_t>& img, Scalar x,
                 Scalar y) const {
     // static_assert(std::is_floating_point_v<S>,
     //               "interpolation / gradient only makes sense "

@@ -1194,8 +1194,8 @@ void detect_keypoints() {
   for (const auto& kv : images) {
     KeypointsData kd;
 
-    detectKeypointsAndDescriptors(kv.second, kd, num_features_per_image,
-                                  rotate_features);
+    // detectKeypointsAndDescriptors(kv.second, kd, num_features_per_image,
+    //                               rotate_features);
 
     feature_corners[kv.first] = kd;
   }

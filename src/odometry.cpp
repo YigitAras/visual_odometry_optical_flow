@@ -59,6 +59,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <visnav/map_utils.h>
 #include <visnav/matching_utils.h>
 #include <visnav/vo_utils.h>
+#include <visnav/image/image.h>
+#include <visnav/image/image_pyr.h>
 
 #include <visnav/gui_helper.h>
 #include <visnav/tracks.h>
@@ -136,6 +138,9 @@ Landmarks old_landmarks;
 // SE2 transforms between consecutive frames
 std::unordered_map<FrameCamId, std::unordered_map<TrackId, Sophus::SE2d>>
     transforms;
+
+std::shared_ptr<std::vector<visnav::ManagedImagePyr<uint16_t>>> old_pyramid,
+    pyramid;
 
 /// cashed info on reprojected landmarks; recomputed every time time from
 /// cameras, landmarks, and feature_tracks; used for visualization and
@@ -362,7 +367,9 @@ int main(int argc, char** argv) {
 
       if (continue_next) {
         // stop if there is nothing left to do
+        std::cout << "SEG FAULT?" << std::endl;
         continue_next = next_step();
+        std::cout << "SEG FAULT!" << std::endl;
       } else {
         // if the gui is just idling, make sure we don't burn too much CPU
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -798,17 +805,26 @@ bool next_step() {
       projected_points;
   std::vector<TrackId> projected_track_ids;
 
-  project_landmarks(current_pose, calib_cam.intrinsics[0], landmarks,
-                    cam_z_threshold, projected_points, projected_track_ids);
+  // project_landmarks(current_pose, calib_cam.intrinsics[0], landmarks,
+  //                   cam_z_threshold, projected_points, projected_track_ids);
 
-  std::cout << "KF Projected " << projected_track_ids.size() << " points."
-            << std::endl;
+  // std::cout << "KF Projected " << projected_track_ids.size() << " points."
+  //           << std::endl;
 
   MatchData md_stereo;
   KeypointsData kdl, kdr;
 
-  pangolin::ManagedImage<uint8_t> imgl = pangolin::LoadImage(images[fcidl]);
-  pangolin::ManagedImage<uint8_t> imgr = pangolin::LoadImage(images[fcidr]);
+  pangolin::ManagedImage<uint8_t> _imgl = pangolin::LoadImage(images[fcidl]);
+  pangolin::ManagedImage<uint8_t> _imgr = pangolin::LoadImage(images[fcidr]);
+  visnav::ManagedImage<uint8_t> imgl, imgr;
+  imgl.CopyFrom(
+      visnav::Image<uint8_t>(_imgl.ptr, _imgl.w, _imgl.h, _imgl.pitch));
+  imgr.CopyFrom(
+      visnav::Image<uint8_t>(_imgr.ptr, _imgr.w, _imgr.h, _imgr.pitch));
+
+  // pyramid.reset(new std::vector<visnav::ManagedImagePyr<uint8_t>>);
+  // pyramid->resize(calib.intrinsics.size());
+  // pyramid.setFromImage()
 
   detectKeypointsAndDescriptors(imgl, kdl, num_features_per_image,
                                 rotate_features);
@@ -820,9 +836,17 @@ bool next_step() {
   Eigen::Matrix3d E;
   computeEssential(T_0_1, E);
 
-  matchDescriptors(kdl.corner_descriptors, kdr.corner_descriptors,
-                   md_stereo.matches, feature_match_max_dist,
-                   feature_match_test_next_best);
+  // matchDescriptors(kdl.corner_descriptors, kdr.corner_descriptors,
+  //                  md_stereo.matches, feature_match_max_dist,
+  //                  feature_match_test_next_best);
+  std::unordered_map<FeatureId, Eigen::AffineCompact2f> l_r_transforms;
+  find_motion_consec(kdl, imgl, imgr, l_r_transforms);
+  match_optical(kdr, l_r_transforms, md_stereo.matches);
+
+  // std::cout << "NUM CORNERS KDL" << kdl.corners.size() << " stereo-matches."
+  //           << std::endl;
+  std::cout << "OPTICAL BABE Found " << l_r_transforms.size()
+            << " stereo-matches." << std::endl;
 
   findInliersEssential(kdl, kdr, calib_cam.intrinsics[0],
                        calib_cam.intrinsics[1], E, 1e-3, md_stereo);
@@ -839,10 +863,14 @@ bool next_step() {
       matches;
   if (current_frame < int(images.size() - 1)) {
     FrameCamId n_fcidl(fcidl.frame_id + 1, 0);
-    pangolin::ManagedImage<uint8_t> n_imgl =
+    pangolin::ManagedImage<uint8_t> _n_imgl =
         pangolin::LoadImage(images[n_fcidl]);
 
-    find_motion_consec(fcidl, feature_corners, imgl, n_imgl, i_j_transforms);
+    visnav::ManagedImage<uint8_t> n_imgl;
+    n_imgl.CopyFrom(visnav::Image<uint8_t>(_n_imgl.ptr, _n_imgl.w, _n_imgl.h,
+                                           _n_imgl.pitch));
+
+    find_motion_consec(kdl, imgl, n_imgl, i_j_transforms);
 
     std::cout << "NUM KD: " << kdl.corners.size()
               << "\nNUM MATCHEEESS: " << i_j_transforms.size() << std::endl;
@@ -852,7 +880,7 @@ bool next_step() {
   change_display_to_image(fcidl);
   change_display_to_image(fcidr);
 
-  compute_projections();
+  // compute_projections();
 
   current_frame++;
   return true;
@@ -935,6 +963,7 @@ bool _next_step() {
 
     remove_old_keyframes(fcidl, max_num_kfs, cameras, landmarks, old_landmarks,
                          kf_frames);
+
     optimize();
 
     current_pose = cameras[fcidl].T_w_c;
@@ -1086,6 +1115,7 @@ void optimize() {
 
   opt_running = true;
 
+  // THIS LINE MAY PRODUCE AN "Abort Trap" ERROR!!
   opt_thread.reset(new std::thread([fid, ba_options] {
     std::set<FrameCamId> fixed_cameras = {{fid, 0}, {fid, 1}};
 

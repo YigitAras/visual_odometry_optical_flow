@@ -54,6 +54,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <visnav/motion_cost.h>
 #include <visnav/patch.h>
 #include <visnav/patterns.h>
+#include <visnav/image/image.h>
 #include <visnav/local_parameterization_se3.hpp>
 
 #include <visnav/tracks.h>
@@ -311,10 +312,10 @@ struct BundleAdjustmentOptions {
   int max_num_iterations = 20;
 };
 
-bool trackPoint(const pangolin::ManagedImage<uint8_t>& img_2, const PatchT& dp,
+bool trackPoint(const visnav::ManagedImage<uint8_t>& img_2, const PatchT& dp,
                 Eigen::AffineCompact2f& transform) {
   bool patch_valid = true;
-  int max_iterations = 20;
+  int max_iterations = 50;
 
   for (int iteration = 0; patch_valid && iteration < max_iterations;
        iteration++) {
@@ -346,11 +347,9 @@ bool trackPoint(const pangolin::ManagedImage<uint8_t>& img_2, const PatchT& dp,
 }
 
 void find_motion_consec(
-    const FrameCamId& fcid, const Corners& feature_corners,
-    const pangolin::ManagedImage<uint8_t>& img1,
-    const pangolin::ManagedImage<uint8_t>& img2,
+    const KeypointsData& kd, const visnav::ManagedImage<uint8_t>& img1,
+    const visnav::ManagedImage<uint8_t>& img2,
     std::unordered_map<FeatureId, Eigen::AffineCompact2f>& transforms) {
-  KeypointsData kd = feature_corners.at(fcid);
   float optical_flow_max_recovered_dist2 = 0.04;
   // KeypointsData kdl = feature_corners.at(fcidl2);
 
@@ -462,34 +461,6 @@ void find_motion_consec(
   //     std::cout << summary.FullReport() << std::endl;
   //     break;
   // }
-}
-
-void find_transformed_matches(
-    const std::unordered_map<FeatureId, Eigen::AffineCompact2f>& i_j_ts,
-    const std::unordered_map<FeatureId, Eigen::AffineCompact2f>& j_i_ts,
-    const KeypointsData& kdi, const KeypointsData& kdj,
-    std::vector<std::pair<FeatureId, FeatureId>>& matches) {
-  // int num_matches = 0;
-  for (const auto& i_j_t : i_j_ts) {
-    FeatureId fid_ij = i_j_t.first;
-    Eigen::AffineCompact2f t_ij = i_j_t.second;
-    Eigen::Vector2f pij = kdi.corners[fid_ij].cast<float>();
-    Eigen::Vector2f td_pij = (t_ij * pij);
-
-    for (const auto& j_i_t : j_i_ts) {
-      FeatureId fid_ji = j_i_t.first;
-      Eigen::Vector2f pji = kdj.corners.at(fid_ji).cast<float>();
-      if (td_pij == pji) {
-        Eigen::AffineCompact2f t_ji = j_i_t.second;
-        Eigen::Vector2f td_pji = (t_ji * pij.cast<float>());
-        if (td_pji == pij) matches.emplace_back(fid_ij, fid_ji);
-      }
-    }
-    // std::cout << "INIT POINT: \n"
-    //           << pij.matrix() << "\nTRANSFORMED POINT: \n"
-    //           << td_pij.matrix() << std::endl;
-  }
-  // return num_matches;
 }
 
 // Run bundle adjustment to optimize cameras, points, and optionally intrinsics

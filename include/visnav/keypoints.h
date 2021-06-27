@@ -39,6 +39,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sophus/se3.hpp>
 
 #include <pangolin/image/managed_image.h>
+#include <visnav/image/image.h>
 
 #include <opencv2/imgproc/imgproc.hpp>
 
@@ -148,7 +149,61 @@ void detectKeypoints(const pangolin::ManagedImage<uint8_t>& img_raw,
   }
 }
 
+void detectKeypoints(const visnav::ManagedImage<uint8_t>& img_raw,
+                     KeypointsData& kd, int num_features) {
+  cv::Mat image(img_raw.h, img_raw.w, CV_8U, img_raw.ptr);
+
+  std::vector<cv::Point2f> points;
+  goodFeaturesToTrack(image, points, num_features, 0.01, 8);
+
+  kd.corners.clear();
+  kd.corner_angles.clear();
+  kd.corner_descriptors.clear();
+
+  for (size_t i = 0; i < points.size(); i++) {
+    if (img_raw.InBounds(points[i].x, points[i].y, EDGE_THRESHOLD)) {
+      kd.corners.emplace_back(points[i].x, points[i].y);
+    }
+  }
+}
+
 void computeAngles(const pangolin::ManagedImage<uint8_t>& img_raw,
+                   KeypointsData& kd, bool rotate_features) {
+  kd.corner_angles.resize(kd.corners.size());
+
+  for (size_t i = 0; i < kd.corners.size(); i++) {
+    const Eigen::Vector2d& p = kd.corners[i];
+
+    const int cx = p[0];
+    const int cy = p[1];
+
+    double angle = 0;
+
+    if (rotate_features) {
+      // TODO SHEET 3: compute angle
+
+      double m01 = 0;
+      double m10 = 0;
+      for (int u = -HALF_PATCH_SIZE; u <= HALF_PATCH_SIZE; u++) {
+        for (int v = 0; u * u + v * v <= HALF_PATCH_SIZE * HALF_PATCH_SIZE;
+             v++) {
+          m01 += v * img_raw(cx + u, cy + v);
+          m10 += u * img_raw(cx + u, cy + v);
+        }
+        for (int v = -1; u * u + v * v <= HALF_PATCH_SIZE * HALF_PATCH_SIZE;
+             v--) {
+          m01 += v * img_raw(cx + u, cy + v);
+          m10 += u * img_raw(cx + u, cy + v);
+        }
+      }
+      angle = atan2(m01, m10);
+    }
+
+    kd.corner_angles[i] = angle;
+  }
+}
+
+void computeAngles(const visnav::ManagedImage<uint8_t>& img_raw,
                    KeypointsData& kd, bool rotate_features) {
   kd.corner_angles.resize(kd.corners.size());
 
@@ -218,12 +273,71 @@ void computeDescriptors(const pangolin::ManagedImage<uint8_t>& img_raw,
   }
 }
 
+void computeDescriptors(const visnav::ManagedImage<uint8_t>& img_raw,
+                        KeypointsData& kd) {
+  kd.corner_descriptors.resize(kd.corners.size());
+
+  for (size_t i = 0; i < kd.corners.size(); i++) {
+    std::bitset<256> descriptor;
+
+    const Eigen::Vector2d& p = kd.corners[i];
+    const double angle = kd.corner_angles[i];
+
+    const int cx = p[0];
+    const int cy = p[1];
+
+    // TODO SHEET 3: compute descriptor
+    for (int j = 0; j < 256; j++) {
+      int pa_x = pattern_31_x_a[j];
+      int pa_y = pattern_31_y_a[j];
+
+      int pb_x = pattern_31_x_b[j];
+      int pb_y = pattern_31_y_b[j];
+
+      int pa_x_ = round(pa_x * cos(angle) - pa_y * sin(angle));
+      int pa_y_ = round(pa_x * sin(angle) + pa_y * cos(angle));
+      int pb_x_ = round(pb_x * cos(angle) - pb_y * sin(angle));
+      int pb_y_ = round(pb_x * sin(angle) + pb_y * cos(angle));
+
+      descriptor[j] =
+          img_raw(cx + pa_x_, cy + pa_y_) < img_raw(cx + pb_x_, cy + pb_y_);
+    }
+
+    kd.corner_descriptors[i] = descriptor;
+  }
+}
+
 void detectKeypointsAndDescriptors(
     const pangolin::ManagedImage<uint8_t>& img_raw, KeypointsData& kd,
     int num_features, bool rotate_features) {
   detectKeypoints(img_raw, kd, num_features);
   computeAngles(img_raw, kd, rotate_features);
   computeDescriptors(img_raw, kd);
+}
+
+void detectKeypointsAndDescriptors(const visnav::ManagedImage<uint8_t>& img_raw,
+                                   KeypointsData& kd, int num_features,
+                                   bool rotate_features) {
+  detectKeypoints(img_raw, kd, num_features);
+  computeAngles(img_raw, kd, rotate_features);
+  computeDescriptors(img_raw, kd);
+}
+
+void match_optical(
+    const KeypointsData& kdr,
+    const std::unordered_map<FeatureId, Eigen::AffineCompact2f>& transforms,
+    std::vector<std::pair<int, int>>& matches) {
+  for (const auto& t : transforms) {
+    float tx = t.second.translation().x();
+    float ty = t.second.translation().y();
+    for (size_t i = 0; i < kdr.corners.size(); i++) {
+      // std::cout << "SEG FAULT?" << std::endl;
+      int x = kdr.corners[i].x();
+      int y = kdr.corners[i].y();
+      if ((x - 5 < tx && tx < x + 5) && (y - 5 < ty && ty < y + 5))
+        matches.emplace_back(t.first, i);
+    }
+  }
 }
 
 void matchDescriptors(const std::vector<std::bitset<256>>& corner_descriptors_1,
