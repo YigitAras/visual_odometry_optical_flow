@@ -397,9 +397,9 @@ void find_motion_consec(
   // std::cout << "INDIEEEE: " << ind << std::endl;
   for (size_t i = 0; i < kd.corners.size(); i++) {
     const Eigen::Vector2d p2d = kd.corners[i];
-    Eigen::AffineCompact2f transform_1 = Eigen::AffineCompact2f();
-    transform_1.setIdentity();
-    transform_1.translation() += p2d.cast<float>();
+    Eigen::AffineCompact2f transform_1 = transforms[i];
+    // transform_1.setIdentity();
+    // transform_1.translation() += p2d.cast<float>();
     Eigen::AffineCompact2f transform_2 = transform_1;
     // std::cout << "BEFORE:\n" << i << std::endl;
     // PatchT patch(img1, transform_1.translation());

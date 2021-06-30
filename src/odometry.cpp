@@ -375,9 +375,7 @@ int main(int argc, char** argv) {
 
       if (continue_next) {
         // stop if there is nothing left to do
-        std::cout << "SEG FAULT?" << std::endl;
         continue_next = next_step();
-        std::cout << "SEG FAULT!" << std::endl;
       } else {
         // if the gui is just idling, make sure we don't burn too much CPU
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -789,35 +787,35 @@ void load_data(const std::string& dataset_path, const std::string& calib_path) {
   show_frame2.Meta().gui_changed = true;
 }
 
-void visualize(const pangolin::ManagedImage<uint8_t>& _img,
-               const pangolin::ManagedImage<uint8_t>& _img_next,
-               const KeypointsData& kdl, const KeypointsData& kdn,
-               std::vector<std::pair<int, int>> matches) {
-  cv::Mat imageL(_img.h, _img.w, CV_8U, _img.ptr);
-  cv::Mat nextImageL(_img_next.h, _img_next.w, CV_8U, _img_next.ptr);
-  cv::Mat out;
-  cv::hconcat(imageL, nextImageL,
-              out);  // Syntax-> hconcat(source1,source2,destination);
-  int checkyboi = 0;
+// void visualize(const pangolin::ManagedImage<uint8_t>& _img,
+//                const pangolin::ManagedImage<uint8_t>& _img_next,
+//                const KeypointsData& kdl, const KeypointsData& kdn,
+//                std::vector<std::pair<int, int>> matches) {
+//   cv::Mat imageL(_img.h, _img.w, CV_8U, _img.ptr);
+//   cv::Mat nextImageL(_img_next.h, _img_next.w, CV_8U, _img_next.ptr);
+//   cv::Mat out;
+//   cv::hconcat(imageL, nextImageL,
+//               out);  // Syntax-> hconcat(source1,source2,destination);
+//   int checkyboi = 0;
 
-  for (const auto& i_j : matches) {
-    if (checkyboi % 10 == 0) {
-      cv::Point src((int)kdl.corners[i_j.first].x(),
-                    (int)kdl.corners[i_j.first].y());
-      cv::Point trgt(kdn.corners[i_j.second].x() + nextImageL.cols,
-                     kdn.corners[i_j.second].y());
+//   for (const auto& i_j : matches) {
+//     if (checkyboi % 5 == 0) {
+//       cv::Point src((int)kdl.corners[i_j.first].x(),
+//                     (int)kdl.corners[i_j.first].y());
+//       cv::Point trgt(kdn.corners[i_j.second].x() + nextImageL.cols,
+//                      kdn.corners[i_j.second].y());
 
-      int thickness = 1;
-      int lineType = cv::LINE_8;
-      cv::line(out, src, trgt, cv::Scalar(255, 0, 0), thickness, lineType);
-    }
-    checkyboi++;
-  }
+//       int thickness = 1;
+//       int lineType = cv::LINE_8;
+//       cv::line(out, src, trgt, cv::Scalar(255, 0, 0), thickness, lineType);
+//     }
+//     checkyboi++;
+//   }
 
-  cv::imwrite("Matches.png", out);
-  // cv::waitKey(0);
-  // std::cout << prevPointsL.size() << " and " << testL.size() << std::endl;
-}
+//   cv::imwrite("Matches", out);
+//   // cv::waitKey(0);
+//   // std::cout << prevPointsL.size() << " and " << testL.size() << std::endl;
+// }
 
 ///////////////////////////////////////////////////////////////////////////////
 /// Here the algorithmically interesting implementation begins
@@ -841,13 +839,14 @@ bool next_step() {
       projected_points;
   std::vector<TrackId> projected_track_ids;
 
-  // project_landmarks(current_pose, calib_cam.intrinsics[0], landmarks,
-  //                   cam_z_threshold, projected_points, projected_track_ids);
+  project_landmarks(current_pose, calib_cam.intrinsics[0], landmarks,
+                    cam_z_threshold, projected_points, projected_track_ids);
 
-  // std::cout << "KF Projected " << projected_track_ids.size() << " points."
-  //           << std::endl;
+  std::cout << "KF Projected " << projected_track_ids.size() << " points."
+            << std::endl;
 
   MatchData md_stereo;
+  LandmarkMatchData md;
   KeypointsData kdl, kdr, kdn;
 
   pangolin::ManagedImage<uint8_t> _imgl = pangolin::LoadImage(images[fcidl]);
@@ -877,7 +876,7 @@ bool next_step() {
   pyramid_r.setFromImage(imgr, num_levels);
 
   if (feature_corners[fcidl].corners.empty() ||
-      (feature_corners[fcidl].corners.size() < 100))
+      feature_corners[fcidl].corners.size() < 100 || (current_frame % 10 == 0))
     detectKeypointsAndDescriptors(imgl, kdl, num_features_per_image,
                                   rotate_features);
   else
@@ -894,6 +893,8 @@ bool next_step() {
   //                  md_stereo.matches, feature_match_max_dist,
   //                  feature_match_test_next_best);
   std::unordered_map<FeatureId, Eigen::AffineCompact2f> l_r_transforms;
+  initialize_transforms(md, kdl, projected_points, projected_track_ids, true,
+                        l_r_transforms);
   find_motion_consec(kdl, old_pyramid, pyramid_r, num_levels, l_r_transforms);
   match_optical(kdr, l_r_transforms, md_stereo.matches);
   computeAngles(imgr, kdr, rotate_features);
@@ -913,9 +914,29 @@ bool next_step() {
   feature_corners[fcidl] = kdl;
   feature_corners[fcidr] = kdr;
   feature_matches[std::make_pair(fcidl, fcidr)] = md_stereo;
-  std::unordered_map<FeatureId, Eigen::AffineCompact2f> i_j_transforms;
-  // std::unordered_map<FeatureId, Eigen::AffineCompact2f> j_i_transforms;
 
+  find_matches_landmarks(kdl, landmarks, feature_corners, projected_points,
+                         projected_track_ids, match_max_dist_2d,
+                         feature_match_max_dist, feature_match_test_next_best,
+                         md);
+
+  std::cout << "KF Found " << md.matches.size() << " matches." << std::endl;
+
+  localize_camera(current_pose, calib_cam.intrinsics[0], kdl, landmarks,
+                  reprojection_error_pnp_inlier_threshold_pixel, md);
+
+  current_pose = md.T_w_c;
+
+  cameras[fcidl].T_w_c = current_pose;
+  cameras[fcidr].T_w_c = current_pose * T_0_1;
+
+  add_new_landmarks(fcidl, fcidr, kdl, kdr, calib_cam, md_stereo, md, landmarks,
+                    next_landmark_id);
+
+  std::unordered_map<FeatureId, Eigen::AffineCompact2f> i_j_transforms;
+  initialize_transforms(md, kdl, projected_points, projected_track_ids, false,
+                        i_j_transforms);
+  // std::unordered_map<FeatureId, Eigen::AffineCompact2f> j_i_transforms;
   if (current_frame < int(images.size() - 1)) {
     FrameCamId n_fcidl(fcidl.frame_id + 1, 0);
     pangolin::ManagedImage<uint8_t> _n_imgl =
@@ -949,7 +970,7 @@ bool next_step() {
   change_display_to_image(fcidl);
   change_display_to_image(fcidr);
 
-  // compute_projections();
+  compute_projections();
 
   current_frame++;
   return true;
