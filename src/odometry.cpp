@@ -857,33 +857,22 @@ bool next_step() {
   imgr.CopyFrom(
       visnav::Image<uint8_t>(_imgr.ptr, _imgr.w, _imgr.h, _imgr.pitch));
 
-  // old_pyramid.reset(new std::vector<visnav::ManagedImagePyr<uint8_t>>);
-  // old_pyramid->resize(calib_cam.intrinsics.size());
-  // // pyramid.setFromImage()
-
-  // for (size_t i = 0; i < calib_cam.intrinsics.size(); i++) {
-  //   old_pyramid->at(i).setFromImage(imgl, num_levels);
-  // }
-
-  // pyramid.reset(new std::vector<visnav::ManagedImagePyr<uint8_t>>);
-  // pyramid->resize(calib_cam.intrinsics.size());
-  // pyramid.setFromImage()
-
-  // for (size_t i = 0; i < calib_cam.intrinsics.size(); i++) {
-  //   pyramid->at(i).setFromImage(imgr, num_levels);
-  // }
   old_pyramid.setFromImage(imgl, num_levels);
   pyramid_r.setFromImage(imgr, num_levels);
 
-  if (feature_corners[fcidl].corners.empty() ||
-      feature_corners[fcidl].corners.size() < 100 || (current_frame % 10 == 0))
+  if ((current_frame % 10 == 0) ||
+      feature_corners[fcidl].corners.size() < 100) {
     detectKeypointsAndDescriptors(imgl, kdl, num_features_per_image,
                                   rotate_features);
-  else
+    std::cout << "Detected " << kdl.corners.size() << " new keypoints."
+              << std::endl;
+  } else {
     kdl = feature_corners[fcidl];
+    std::cout << "Retrieved " << kdl.corners.size() << " optimized keypoints."
+              << std::endl;
+  }
   // detectKeypointsAndDescriptors(imgr, kdr, num_features_per_image,
   //                               rotate_features);
-
   md_stereo.T_i_j = T_0_1;
 
   Eigen::Matrix3d E;
@@ -908,7 +897,7 @@ bool next_step() {
   findInliersEssential(kdl, kdr, calib_cam.intrinsics[0],
                        calib_cam.intrinsics[1], E, 1e-3, md_stereo);
 
-  std::cout << "KF Found " << md_stereo.inliers.size() << " stereo-matches."
+  std::cout << "Found " << md_stereo.inliers.size() << " stereo-matches."
             << std::endl;
 
   feature_corners[fcidl] = kdl;
@@ -920,7 +909,7 @@ bool next_step() {
                          feature_match_max_dist, feature_match_test_next_best,
                          md);
 
-  std::cout << "KF Found " << md.matches.size() << " matches." << std::endl;
+  std::cout << "Found " << md.matches.size() << " matches." << std::endl;
 
   localize_camera(current_pose, calib_cam.intrinsics[0], kdl, landmarks,
                   reprojection_error_pnp_inlier_threshold_pixel, md);
@@ -932,6 +921,10 @@ bool next_step() {
 
   add_new_landmarks(fcidl, fcidr, kdl, kdr, calib_cam, md_stereo, md, landmarks,
                     next_landmark_id);
+
+  remove_old_keyframes(fcidl, 5, cameras, landmarks, old_landmarks, kf_frames);
+  optimize();
+  current_pose = cameras[fcidl].T_w_c;
 
   std::unordered_map<FeatureId, Eigen::AffineCompact2f> i_j_transforms;
   initialize_transforms(md, kdl, projected_points, projected_track_ids, false,
@@ -1187,6 +1180,7 @@ void optimize() {
   // camera constant is a bit suboptimal, since we only need 1 DoF, but it's
   // simple and the initial poses should be good from calibration.
   FrameId fid = *(kf_frames.begin());
+  // FrameId fid = std::max(current_frame - 10, 0);
   // std::cout << "fid " << fid << std::endl;
 
   // Prepare bundle adjustment
@@ -1201,18 +1195,23 @@ void optimize() {
   cameras_opt = cameras;
   landmarks_opt = landmarks;
 
-  opt_running = true;
+  std::set<FrameCamId> fixed_cameras = {{fid, 0}, {fid, 1}};
+  bundle_adjustment(feature_corners, ba_options, fixed_cameras, calib_cam_opt,
+                    cameras_opt, landmarks_opt);
 
-  // THIS LINE MAY PRODUCE AN "Abort Trap" ERROR!!
-  opt_thread.reset(new std::thread([fid, ba_options] {
-    std::set<FrameCamId> fixed_cameras = {{fid, 0}, {fid, 1}};
+  // opt_running = true;
 
-    bundle_adjustment(feature_corners, ba_options, fixed_cameras, calib_cam_opt,
-                      cameras_opt, landmarks_opt);
+  // // THIS LINE MAY PRODUCE AN "Abort Trap" ERROR!!
+  // opt_thread.reset(new std::thread([fid, ba_options] {
+  //   std::set<FrameCamId> fixed_cameras = {{fid, 0}, {fid, 1}};
 
-    opt_finished = true;
-    opt_running = false;
-  }));
+  //   bundle_adjustment(feature_corners, ba_options, fixed_cameras,
+  //   calib_cam_opt,
+  //                     cameras_opt, landmarks_opt);
+
+  //   opt_finished = true;
+  //   opt_running = false;
+  // }));
 
   // Update project info cache
   compute_projections();
