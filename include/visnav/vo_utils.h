@@ -204,31 +204,19 @@ void initialize_transforms(
         projected_points,
     const std::vector<TrackId>& projected_track_ids, const bool stereo_init,
     std::unordered_map<FeatureId, Eigen::AffineCompact2f>& transforms) {
-  if (stereo_init) {
-    for (size_t i = 0; i < kdl.corners.size(); i++) {
-      transforms[i].setIdentity();
-      transforms[i].translation() += kdl.corners[i].cast<float>();
-    }
-  } else {
-    for (size_t i = 0; i < kdl.corners.size(); i++) {
-      bool landmark_found = false;
-      transforms[i].setIdentity();
-      for (const auto& match : md.inliers) {
-        FeatureId fid = match.first;
-        TrackId tid = match.second;
-        if (int(i) == fid) {
-          for (size_t t = 0; t < projected_track_ids.size(); t++) {
-            if (int(t) == tid) {
-              landmark_found = true;
-              transforms[i].translation() += projected_points[t].cast<float>();
-              break;
-            }
-          }
-          if (landmark_found) break;
+  for (size_t i = 0; i < kdl.corners.size(); i++) {
+    transforms[i].setIdentity();
+    transforms[i].translation() = kdl.corners[i].cast<float>();
+  }
+
+  if (!stereo_init) {
+    for (const auto& match : md.inliers) {
+      FeatureId fid = match.first;
+      TrackId tid = match.second;
+      for (size_t t = 0; t < projected_track_ids.size(); t++) {
+        if (projected_track_ids[t] == tid) {
+          transforms[fid].translation() = projected_points[t].cast<float>();
         }
-      }
-      if (!landmark_found) {
-        transforms[i].translation() += kdl.corners[i].cast<float>();
       }
     }
   }
