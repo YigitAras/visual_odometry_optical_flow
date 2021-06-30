@@ -326,16 +326,29 @@ void detectKeypointsAndDescriptors(const visnav::ManagedImage<uint8_t>& img_raw,
 void match_optical(
     KeypointsData& kdr,
     const std::unordered_map<FeatureId, Eigen::AffineCompact2f>& transforms,
-    std::vector<std::pair<int, int>>& matches) {
+    std::vector<std::pair<int, int>>& matches, bool stereo,
+    std::unordered_map<FeatureId, TrackId>& prop_tracks) {
   kdr.corners.clear();
   matches.clear();
   int i = 0;
+  std::unordered_map<FeatureId, TrackId> updated_tracks;
   for (const auto& t : transforms) {
     // std::cout << "SEG FAULT?" << std::endl;
+    // if(t.second.data)
     kdr.corners.push_back(t.second.translation().cast<double>());
+
+    if(!stereo){
+      updated_tracks.insert(std::make_pair(i,prop_tracks[t.first]));
+    }
+    
     matches.emplace_back(t.first, i);
     i++;
   }
+  if(!stereo){
+    // 
+    prop_tracks = updated_tracks;
+  }
+  
 }
 
 void matchDescriptors(const std::vector<std::bitset<256>>& corner_descriptors_1,

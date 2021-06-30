@@ -82,7 +82,7 @@ void find_matches_landmarks(
         projected_points,
     const std::vector<TrackId>& projected_track_ids,
     const double match_max_dist_2d, const int feature_match_threshold,
-    const double feature_match_dist_2_best, LandmarkMatchData& md) {
+    const double feature_match_dist_2_best, LandmarkMatchData& md, std::unordered_map<FeatureId, TrackId>& prop_tracks) {
   md.matches.clear();
 
   // TODO SHEET 5: Find the matches between projected landmarks and detected
@@ -94,6 +94,8 @@ void find_matches_landmarks(
   // should be used to filter outliers the same way as in exercise 3. You should
   // fill md.matches with <featureId,trackId> pairs for the successful matches
   // that pass all tests.
+
+  /*
   for (long unsigned int i = 0; i < kdl.corners.size(); i++) {
     auto pcr = kdl.corners[i];
     int dist1 = 257;
@@ -130,6 +132,11 @@ void find_matches_landmarks(
       continue;
     }
     md.matches.push_back(std::make_pair(i, best_pind));
+  }
+  */
+ // CAREFUL FOR CORRESPONDANCE OF FEATUREID of KDL - KDN
+  for(auto el: prop_tracks){
+    md.matches.push_back(el);
   }
 }
 
@@ -203,7 +210,8 @@ void initialize_transforms(
                       Eigen::aligned_allocator<Eigen::Vector2d>>&
         projected_points,
     const std::vector<TrackId>& projected_track_ids, const bool stereo_init,
-    std::unordered_map<FeatureId, Eigen::AffineCompact2f>& transforms) {
+    std::unordered_map<FeatureId, Eigen::AffineCompact2f>& transforms,
+    std::unordered_map<FeatureId, TrackId>& prop_tracks) {
   for (size_t i = 0; i < kdl.corners.size(); i++) {
     transforms[i].setIdentity();
     transforms[i].translation() = kdl.corners[i].cast<float>();
@@ -213,11 +221,19 @@ void initialize_transforms(
     for (const auto& match : md.inliers) {
       FeatureId fid = match.first;
       TrackId tid = match.second;
+      
       for (size_t t = 0; t < projected_track_ids.size(); t++) {
         if (projected_track_ids[t] == tid) {
           transforms[fid].translation() = projected_points[t].cast<float>();
         }
+      } 
+      /*
+      if(prop_tracks.find(fid) != prop_tracks.end()){
+      if (prop_tracks.at(fid) == tid) {
+        transforms[fid].translation() = kdl.corners[fid].cast<float>();
+       }
       }
+      */
     }
   }
 }
@@ -226,7 +242,8 @@ void add_new_landmarks(const FrameCamId fcidl, const FrameCamId fcidr,
                        const KeypointsData& kdl, const KeypointsData& kdr,
                        const Calibration& calib_cam, const MatchData& md_stereo,
                        const LandmarkMatchData& md, Landmarks& landmarks,
-                       TrackId& next_landmark_id) {
+                       TrackId& next_landmark_id,
+                       std::unordered_map<FeatureId, TrackId>& prop_tracks) {
   // input should be stereo pair
   assert(fcidl.cam_id == 0);
   assert(fcidr.cam_id == 1);
@@ -247,6 +264,7 @@ void add_new_landmarks(const FrameCamId fcidl, const FrameCamId fcidr,
 
   // binary array for checking
   std::set<std::pair<FeatureId, FeatureId>> checker;
+  prop_tracks.clear();
 
   for (auto elem : md.inliers) {
     auto feat_id = elem.first;
@@ -256,6 +274,7 @@ void add_new_landmarks(const FrameCamId fcidl, const FrameCamId fcidr,
       if (el.first == feat_id) {
         landmarks.at(track_id).obs.insert(std::make_pair(fcidr, el.second));
         // to check whetver the couple was inserted
+        prop_tracks.insert(std::make_pair(feat_id,track_id));
         checker.insert(el);
       }
     }
@@ -282,6 +301,7 @@ void add_new_landmarks(const FrameCamId fcidl, const FrameCamId fcidr,
       lm.obs.insert(std::make_pair(fcidl, el.first));
       lm.obs.insert(std::make_pair(fcidr, el.second));
       landmarks.insert(std::make_pair(next_landmark_id, lm));
+      prop_tracks.insert(std::make_pair(el.first, next_landmark_id));
       next_landmark_id++;
     }
     ind++;

@@ -376,7 +376,8 @@ bool trackPoint(const visnav::ManagedImagePyr<uint8_t>& old_pyr,
 void find_motion_consec(
     const KeypointsData& kd, const visnav::ManagedImagePyr<uint8_t>& old_pyr,
     const visnav::ManagedImagePyr<uint8_t>& pyr, const size_t& num_levels,
-    std::unordered_map<FeatureId, Eigen::AffineCompact2f>& transforms) {
+    std::unordered_map<FeatureId, Eigen::AffineCompact2f>& transforms,
+    bool prop, std::unordered_map<FeatureId, TrackId>& prop_tracks) {
   float optical_flow_max_recovered_dist2 = 0.04;
   // KeypointsData kdl = feature_corners.at(fcidl2);
 
@@ -395,6 +396,7 @@ void find_motion_consec(
   //   ind++;
   // }
   // std::cout << "INDIEEEE: " << ind << std::endl;
+
   for (size_t i = 0; i < kd.corners.size(); i++) {
     const Eigen::Vector2d p2d = kd.corners[i];
     Eigen::AffineCompact2f transform_1 = transforms[i];
@@ -406,10 +408,11 @@ void find_motion_consec(
 
     transform_2.linear().setIdentity();
     bool valid = trackPoint(old_pyr, pyr, num_levels, transform_1, transform_2);
+    bool flag = true;
     transform_2.linear() = transform_1.linear() * transform_2.linear();
     // std::cout << "AFTER:\n" << i << std::endl;
     // std::cout << "NEW TRANSFORMS:\n" << transforms[i].matrix() << std::endl;
-
+    
     if (valid) {
       Eigen::AffineCompact2f transform_1_recovered = transform_2;
       // PatchT patch2(img2, transform_2.translation());
@@ -427,71 +430,76 @@ void find_motion_consec(
 
         if (dist2 < optical_flow_max_recovered_dist2) {
           transforms[i] = transform_2;
+          flag = false;
         }
+
+        // problem.AddParameterBlock(transforms[i].data(),
+        //                           Sophus::SE2d::num_parameters);
+
+        // ceres::CostFunction* cost_function =
+        //     new ceres::NumericDiffCostFunction<MotionCostFunctor,
+        //     ceres::CENTRAL, 1,
+        //                                        Sophus::SE2d::num_parameters>(
+        //         new MotionCostFunctor(p2d, eigen_img1, eigen_img2));
+        // // problem.AddResidualBlock(cost_function, NULL,
+        // transforms[i].data()); problem.AddResidualBlock(cost_function, (new
+        // ceres::HuberLoss(1.0)),
+        //                          transforms[i].data());
       }
     }
+    if (flag) {
+      transforms.erase(i);
+      if (prop) prop_tracks.erase(i);
+    }
+    // ceres::Problem problem;
+    // int HALF_PATCH_SIZE = 3;
+    // size_t patch_size = 0;
+    // for (int x = -HALF_PATCH_SIZE; x < HALF_PATCH_SIZE + 1; x++) {
+    //   const int y_bound = sqrt(HALF_PATCH_SIZE * HALF_PATCH_SIZE - x * x);
+    //   for (int y = -y_bound; y < y_bound + 1; y++) {
+    //     patch_size++;
+    //   }
+    // }
 
-    // problem.AddParameterBlock(transforms[i].data(),
-    //                           Sophus::SE2d::num_parameters);
+    // for (size_t i = 0; i < kd.corners.size(); i++) {
+    //   const Eigen::Vector2d p2d = kd.corners[i];
+    //   transforms[i] = Sophus::SE2d();
 
-    // ceres::CostFunction* cost_function =
-    //     new ceres::NumericDiffCostFunction<MotionCostFunctor, ceres::CENTRAL,
-    //     1,
-    //                                        Sophus::SE2d::num_parameters>(
-    //         new MotionCostFunctor(p2d, eigen_img1, eigen_img2));
-    // // problem.AddResidualBlock(cost_function, NULL, transforms[i].data());
-    // problem.AddResidualBlock(cost_function, (new ceres::HuberLoss(1.0)),
-    //                          transforms[i].data());
+    //   problem.AddParameterBlock(transforms[i].data(),
+    //                             Sophus::SE2d::num_parameters);
+
+    //   ceres::CostFunction* cost_function =
+    //       new ceres::NumericDiffCostFunction<MotionCostFunctor,
+    //       ceres::CENTRAL, 1,
+    //                                          Sophus::SE2d::num_parameters>(
+    //           new MotionCostFunctor(p2d, eigen_img1, eigen_img2));
+    //   // problem.AddResidualBlock(cost_function, NULL, transforms[i].data());
+    //   problem.AddResidualBlock(cost_function, (new ceres::HuberLoss(1.0)),
+    //                            transforms[i].data());
+    // }
+    // // std::cout << "PATCH SIZE: " << patch_size << std::endl;
+    // // std::cout << "-----------" << std::endl;
+
+    // // Solve
+
+    // ceres::Solver::Options ceres_options;
+    // ceres_options.max_num_iterations = 30;
+    // ceres_options.linear_solver_type = ceres::SPARSE_SCHUR;
+    // ceres_options.num_threads =
+    // tbb::task_scheduler_init::default_num_threads(); ceres::Solver::Summary
+    // summary; Solve(ceres_options, &problem, &summary); switch (1) {
+    //   // 0: silent
+    //   case 1:
+    //     std::cout << summary.BriefReport() << std::endl;
+    //     break;
+    //   case 2:
+    //     std::cout << summary.FullReport() << std::endl;
+    //     break;
+    // }
   }
-
-  // ceres::Problem problem;
-  // int HALF_PATCH_SIZE = 3;
-  // size_t patch_size = 0;
-  // for (int x = -HALF_PATCH_SIZE; x < HALF_PATCH_SIZE + 1; x++) {
-  //   const int y_bound = sqrt(HALF_PATCH_SIZE * HALF_PATCH_SIZE - x * x);
-  //   for (int y = -y_bound; y < y_bound + 1; y++) {
-  //     patch_size++;
-  //   }
-  // }
-
-  // for (size_t i = 0; i < kd.corners.size(); i++) {
-  //   const Eigen::Vector2d p2d = kd.corners[i];
-  //   transforms[i] = Sophus::SE2d();
-
-  //   problem.AddParameterBlock(transforms[i].data(),
-  //                             Sophus::SE2d::num_parameters);
-
-  //   ceres::CostFunction* cost_function =
-  //       new ceres::NumericDiffCostFunction<MotionCostFunctor, ceres::CENTRAL,
-  //       1,
-  //                                          Sophus::SE2d::num_parameters>(
-  //           new MotionCostFunctor(p2d, eigen_img1, eigen_img2));
-  //   // problem.AddResidualBlock(cost_function, NULL, transforms[i].data());
-  //   problem.AddResidualBlock(cost_function, (new ceres::HuberLoss(1.0)),
-  //                            transforms[i].data());
-  // }
-  // // std::cout << "PATCH SIZE: " << patch_size << std::endl;
-  // // std::cout << "-----------" << std::endl;
-
-  // // Solve
-
-  // ceres::Solver::Options ceres_options;
-  // ceres_options.max_num_iterations = 30;
-  // ceres_options.linear_solver_type = ceres::SPARSE_SCHUR;
-  // ceres_options.num_threads =
-  // tbb::task_scheduler_init::default_num_threads(); ceres::Solver::Summary
-  // summary; Solve(ceres_options, &problem, &summary); switch (1) {
-  //   // 0: silent
-  //   case 1:
-  //     std::cout << summary.BriefReport() << std::endl;
-  //     break;
-  //   case 2:
-  //     std::cout << summary.FullReport() << std::endl;
-  //     break;
-  // }
 }
-
-// Run bundle adjustment to optimize cameras, points, and optionally intrinsics
+// Run bundle adjustment to optimize cameras, points, and optionally
+// intrinsics
 void bundle_adjustment(const Corners& feature_corners,
                        const BundleAdjustmentOptions& options,
                        const std::set<FrameCamId>& fixed_cameras,

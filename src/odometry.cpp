@@ -96,10 +96,11 @@ constexpr int NUM_CAMS = 2;
 /// Variables
 ///////////////////////////////////////////////////////////////////////////////
 
-int current_frame = 0;
+int current_frame = 150;
 Sophus::SE3d current_pose;
 bool take_keyframe = true;
 TrackId next_landmark_id = 0;
+std::unordered_map<FeatureId, TrackId> propagate_tracks;
 
 std::atomic<bool> opt_running{false};
 std::atomic<bool> opt_finished{false};
@@ -823,6 +824,7 @@ void load_data(const std::string& dataset_path, const std::string& calib_path) {
 
 // Execute next step in the overall odometry pipeline. Call this repeatedly
 // until it returns false for automatic execution.
+
 bool next_step() {
   if (current_frame >= int(images.size()) / NUM_CAMS) return false;
 
@@ -860,8 +862,8 @@ bool next_step() {
   old_pyramid.setFromImage(imgl, num_levels);
   pyramid_r.setFromImage(imgr, num_levels);
 
-  if ((current_frame % 10 == 0) ||
-      feature_corners[fcidl].corners.size() < 100) {
+  if ((current_frame == 150) || feature_corners[fcidl].corners.size() < 150) {
+    // KURT GIBI BURDA PROPAGATE SEYLERINI TEMIZLE EGER SIFIRLANICAKSA
     detectKeypointsAndDescriptors(imgl, kdl, num_features_per_image,
                                   rotate_features);
     std::cout << "Detected " << kdl.corners.size() << " new keypoints."
@@ -883,9 +885,9 @@ bool next_step() {
   //                  feature_match_test_next_best);
   std::unordered_map<FeatureId, Eigen::AffineCompact2f> l_r_transforms;
   initialize_transforms(md, kdl, projected_points, projected_track_ids, true,
-                        l_r_transforms);
-  find_motion_consec(kdl, old_pyramid, pyramid_r, num_levels, l_r_transforms);
-  match_optical(kdr, l_r_transforms, md_stereo.matches);
+                        l_r_transforms, propagate_tracks);
+  find_motion_consec(kdl, old_pyramid, pyramid_r, num_levels, l_r_transforms, false, propagate_tracks);
+  match_optical(kdr, l_r_transforms, md_stereo.matches,true, propagate_tracks);
   computeAngles(imgr, kdr, rotate_features);
   computeDescriptors(imgr, kdr);
 
@@ -906,8 +908,8 @@ bool next_step() {
 
   find_matches_landmarks(kdl, landmarks, feature_corners, projected_points,
                          projected_track_ids, match_max_dist_2d,
-                         feature_match_max_dist, feature_match_test_next_best,
-                         md);
+                         feature_match_max_dist,
+                         feature_match_test_next_best, md, propagate_tracks);
 
   std::cout << "Found " << md.matches.size() << " matches." << std::endl;
 
@@ -920,7 +922,7 @@ bool next_step() {
   cameras[fcidr].T_w_c = current_pose * T_0_1;
 
   add_new_landmarks(fcidl, fcidr, kdl, kdr, calib_cam, md_stereo, md, landmarks,
-                    next_landmark_id);
+                    next_landmark_id, propagate_tracks);
 
   remove_old_keyframes(fcidl, 5, cameras, landmarks, old_landmarks, kf_frames);
   optimize();
@@ -928,7 +930,7 @@ bool next_step() {
 
   std::unordered_map<FeatureId, Eigen::AffineCompact2f> i_j_transforms;
   initialize_transforms(md, kdl, projected_points, projected_track_ids, false,
-                        i_j_transforms);
+                        i_j_transforms, propagate_tracks);
   // std::unordered_map<FeatureId, Eigen::AffineCompact2f> j_i_transforms;
   if (current_frame < int(images.size() - 1)) {
     FrameCamId n_fcidl(fcidl.frame_id + 1, 0);
@@ -947,16 +949,16 @@ bool next_step() {
     // }
     pyramid_n.setFromImage(n_imgl, num_levels);
 
-    find_motion_consec(kdl, old_pyramid, pyramid_n, num_levels, i_j_transforms);
+    find_motion_consec(kdl, old_pyramid, pyramid_n, num_levels, i_j_transforms , true, propagate_tracks);
 
     std::cout << "NUM KD: " << kdl.corners.size()
               << "\nNUM MATCHEEESS: " << i_j_transforms.size() << std::endl;
-    match_optical(kdn, i_j_transforms, matches[fcidl]);
+    match_optical(kdn, i_j_transforms, matches[fcidl], false, propagate_tracks);
     computeAngles(n_imgl, kdn, rotate_features);
     computeDescriptors(n_imgl, kdn);
     feature_corners[n_fcidl] = kdn;
 
-    //visualize(_imgl, _n_imgl, kdl, kdn, matches[fcidl]);
+    // visualize(_imgl, _n_imgl, kdl, kdn, matches[fcidl]);
   }
 
   // update image views
@@ -969,6 +971,7 @@ bool next_step() {
   return true;
 }
 
+/*
 bool _next_step() {
   if (current_frame >= int(images.size()) / NUM_CAMS) return false;
 
@@ -1116,6 +1119,7 @@ bool _next_step() {
     return true;
   }
 }
+*/
 
 // Compute reprojections for all landmark observations for visualization and
 // outlier removal.
