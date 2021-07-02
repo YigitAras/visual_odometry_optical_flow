@@ -184,6 +184,7 @@ void localize_camera(const Sophus::SE3d& current_pose,
   ransac.sac_model_ = cenposeproblem_ptr;
   ransac.threshold_ =
       1.0 - cos(atan(reprojection_error_pnp_inlier_threshold_pixel / 500.0));
+
   ransac.computeModel();
 
   adapter.setR(ransac.model_coefficients_.block<3, 3>(0, 0));
@@ -270,11 +271,12 @@ void add_new_landmarks(const FrameCamId fcidl, const FrameCamId fcidr,
     auto feat_id = elem.first;
     auto track_id = elem.second;
     landmarks.at(track_id).obs.insert(std::make_pair(fcidl, feat_id));
+    prop_tracks.insert(std::make_pair(feat_id,track_id));
+
     for (auto el : md_stereo.inliers) {
       if (el.first == feat_id) {
         landmarks.at(track_id).obs.insert(std::make_pair(fcidr, el.second));
         // to check whetver the couple was inserted
-        prop_tracks.insert(std::make_pair(feat_id,track_id));
         checker.insert(el);
       }
     }

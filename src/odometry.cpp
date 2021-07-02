@@ -862,10 +862,40 @@ bool next_step() {
   old_pyramid.setFromImage(imgl, num_levels);
   pyramid_r.setFromImage(imgr, num_levels);
 
-  if ((current_frame == 150) || feature_corners[fcidl].corners.size() < 150) {
+  if (current_frame == 150 || feature_corners[fcidl].corners.size() < 150) {
     // KURT GIBI BURDA PROPAGATE SEYLERINI TEMIZLE EGER SIFIRLANICAKSA
+    /*
+    kdl = feature_corners[fcidl];
+    KeypointsData dummy;
+    */
     detectKeypointsAndDescriptors(imgl, kdl, num_features_per_image,
                                   rotate_features);
+    
+    /*
+    // code block
+    std::vector<Eigen::Vector2d> ides;
+    for(auto cc: dummy.corners){
+      bool found = false;;
+      for(auto ch: kdl.corners){
+        if((cc-ch).norm() < 0.10){
+          found = true;
+          break;
+        }
+      }
+      if(found == false) ides.push_back(cc);
+    }
+    for(auto cc: ides){
+      kdl.corners.push_back(cc);
+    }
+    computeAngles(imgl, kdl, rotate_features);
+    computeDescriptors(imgl, kdl);
+    */
+
+    // code block ==//
+    
+    propagate_tracks.clear();
+    projected_track_ids.clear();
+    projected_points.clear();
     std::cout << "Detected " << kdl.corners.size() << " new keypoints."
               << std::endl;
   } else {
@@ -886,7 +916,7 @@ bool next_step() {
   std::unordered_map<FeatureId, Eigen::AffineCompact2f> l_r_transforms;
   initialize_transforms(md, kdl, projected_points, projected_track_ids, true,
                         l_r_transforms, propagate_tracks);
-  find_motion_consec(kdl, old_pyramid, pyramid_r, num_levels, l_r_transforms, false, propagate_tracks);
+  find_motion_consec(kdl, old_pyramid, pyramid_r, num_levels, l_r_transforms, true, propagate_tracks);
   match_optical(kdr, l_r_transforms, md_stereo.matches,true, propagate_tracks);
   computeAngles(imgr, kdr, rotate_features);
   computeDescriptors(imgr, kdr);
@@ -924,6 +954,7 @@ bool next_step() {
   add_new_landmarks(fcidl, fcidr, kdl, kdr, calib_cam, md_stereo, md, landmarks,
                     next_landmark_id, propagate_tracks);
 
+//sildigimiz landmarklari propagate etmemek lazim
   remove_old_keyframes(fcidl, 5, cameras, landmarks, old_landmarks, kf_frames);
   optimize();
   current_pose = cameras[fcidl].T_w_c;
@@ -964,7 +995,7 @@ bool next_step() {
   // update image views
   change_display_to_image(fcidl);
   change_display_to_image(fcidr);
-
+  
   compute_projections();
 
   current_frame++;

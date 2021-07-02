@@ -338,7 +338,10 @@ void match_optical(
     kdr.corners.push_back(t.second.translation().cast<double>());
 
     if(!stereo){
-      updated_tracks.insert(std::make_pair(i,prop_tracks[t.first]));
+
+      if(prop_tracks.find(t.first) != prop_tracks.end()){
+        updated_tracks.insert(std::make_pair(i,prop_tracks[t.first]));
+      }
     }
     
     matches.emplace_back(t.first, i);

@@ -408,7 +408,7 @@ void find_motion_consec(
 
     transform_2.linear().setIdentity();
     bool valid = trackPoint(old_pyr, pyr, num_levels, transform_1, transform_2);
-    bool flag = true;
+    bool flag = false;
     transform_2.linear() = transform_1.linear() * transform_2.linear();
     // std::cout << "AFTER:\n" << i << std::endl;
     // std::cout << "NEW TRANSFORMS:\n" << transforms[i].matrix() << std::endl;
@@ -430,7 +430,7 @@ void find_motion_consec(
 
         if (dist2 < optical_flow_max_recovered_dist2) {
           transforms[i] = transform_2;
-          flag = false;
+          flag = true;
         }
 
         // problem.AddParameterBlock(transforms[i].data(),
@@ -447,7 +447,7 @@ void find_motion_consec(
         //                          transforms[i].data());
       }
     }
-    if (flag) {
+    if (!flag) {
       transforms.erase(i);
       if (prop) prop_tracks.erase(i);
     }
