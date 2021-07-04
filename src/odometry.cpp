@@ -686,6 +686,7 @@ void draw_scene() {
 
   // render points
   if (show_points3d && landmarks.size() > 0) {
+    //std::cout << "Landmarks to be drawn: " <<  " " << landmarks.size() << std::endl;
     glPointSize(3.0);
     glBegin(GL_POINTS);
     for (const auto& kv_lm : landmarks) {
@@ -866,36 +867,36 @@ bool next_step() {
   if (current_frame == 150 || feature_corners[fcidl].corners.size() < 150) {
     // KURT GIBI BURDA PROPAGATE SEYLERINI TEMIZLE EGER SIFIRLANICAKSA
     
-    // kdl = feature_corners[fcidl];
-    // KeypointsData dummy;
+    kdl = feature_corners[fcidl];
+    KeypointsData dummy;
     
-    detectKeypointsAndDescriptors(imgl, kdl, num_features_per_image,
+    detectKeypointsAndDescriptors(imgl, dummy, num_features_per_image,
                                   rotate_features);
     
     
-    // // code block
-    // std::vector<Eigen::Vector2d> ides;
-    // for(auto cc: dummy.corners){
-    //   bool found = false;;
-    //   for(auto ch: kdl.corners){
-    //     if((cc-ch).norm() < 1){
-    //       found = true;
-    //       break;
-    //     }
-    //   }
-    //   if(found == false) ides.push_back(cc);
-    // }
+    // code block
+    std::vector<Eigen::Vector2d> ides;
+    for(auto cc: dummy.corners){
+      bool found = false;;
+      for(auto ch: kdl.corners){
+        if((cc-ch).norm() < 3){
+          found = true;
+          break;
+        }
+      }
+      if(found == false) ides.push_back(cc);
+    }
 
-    // for(auto cc: ides){
-    //   kdl.corners.push_back(cc);
-    // }
-    // computeAngles(imgl, kdl, rotate_features);
-    // computeDescriptors(imgl, kdl);
+    for(auto cc: ides){
+      kdl.corners.push_back(cc);
+    }
+    computeAngles(imgl, kdl, rotate_features);
+    computeDescriptors(imgl, kdl);
     
     
     // code block ==//
     
-    propagate_tracks.clear();
+    //propagate_tracks.clear();
     md.matches.clear();
     projected_track_ids.clear();
     projected_points.clear();
@@ -1006,156 +1007,6 @@ bool next_step() {
   return true;
 }
 
-/*
-bool _next_step() {
-  if (current_frame >= int(images.size()) / NUM_CAMS) return false;
-
-  std::cout << "CHEKING OUT " << current_frame << std::endl
-            << int(images.size()) << std::endl
-            << NUM_CAMS << std::endl;
-
-  const Sophus::SE3d T_0_1 = calib_cam.T_i_c[0].inverse() * calib_cam.T_i_c[1];
-  take_keyframe = true;
-
-  if (take_keyframe) {
-    take_keyframe = false;
-
-    FrameCamId fcidl(current_frame, 0), fcidr(current_frame, 1);
-
-    std::vector<Eigen::Vector2d, Eigen::aligned_allocator<Eigen::Vector2d>>
-        projected_points;
-    std::vector<TrackId> projected_track_ids;
-
-    project_landmarks(current_pose, calib_cam.intrinsics[0], landmarks,
-                      cam_z_threshold, projected_points, projected_track_ids);
-
-    std::cout << "KF Projected " << projected_track_ids.size() << " points."
-              << std::endl;
-
-    MatchData md_stereo;
-    KeypointsData kdl, kdr;
-
-    pangolin::ManagedImage<uint8_t> imgl = pangolin::LoadImage(images[fcidl]);
-    pangolin::ManagedImage<uint8_t> imgr = pangolin::LoadImage(images[fcidr]);
-
-    detectKeypointsAndDescriptors(imgl, kdl, num_features_per_image,
-                                  rotate_features);
-    detectKeypointsAndDescriptors(imgr, kdr, num_features_per_image,
-                                  rotate_features);
-
-    md_stereo.T_i_j = T_0_1;
-
-    Eigen::Matrix3d E;
-    computeEssential(T_0_1, E);
-
-    matchDescriptors(kdl.corner_descriptors, kdr.corner_descriptors,
-                     md_stereo.matches, feature_match_max_dist,
-                     feature_match_test_next_best);
-
-    findInliersEssential(kdl, kdr, calib_cam.intrinsics[0],
-                         calib_cam.intrinsics[1], E, 1e-3, md_stereo);
-
-    std::cout << "KF Found " << md_stereo.inliers.size() << " stereo-matches."
-              << std::endl;
-
-    feature_corners[fcidl] = kdl;
-    feature_corners[fcidr] = kdr;
-    feature_matches[std::make_pair(fcidl, fcidr)] = md_stereo;
-
-    LandmarkMatchData md;
-
-    find_matches_landmarks(kdl, landmarks, feature_corners, projected_points,
-                           projected_track_ids, match_max_dist_2d,
-                           feature_match_max_dist, feature_match_test_next_best,
-                           md);
-
-    std::cout << "KF Found " << md.matches.size() << " matches." << std::endl;
-
-    localize_camera(current_pose, calib_cam.intrinsics[0], kdl, landmarks,
-                    reprojection_error_pnp_inlier_threshold_pixel, md);
-
-    current_pose = md.T_w_c;
-
-    cameras[fcidl].T_w_c = current_pose;
-    cameras[fcidr].T_w_c = current_pose * T_0_1;
-
-    add_new_landmarks(fcidl, fcidr, kdl, kdr, calib_cam, md_stereo, md,
-                      landmarks, next_landmark_id);
-
-    remove_old_keyframes(fcidl, max_num_kfs, cameras, landmarks, old_landmarks,
-                         kf_frames);
-
-    optimize();
-
-    current_pose = cameras[fcidl].T_w_c;
-
-    // update image views
-    change_display_to_image(fcidl);
-    change_display_to_image(fcidr);
-
-    compute_projections();
-
-    current_frame++;
-    return true;
-  } else {
-    FrameCamId fcidl(current_frame, 0), fcidr(current_frame, 1);
-
-    std::vector<Eigen::Vector2d, Eigen::aligned_allocator<Eigen::Vector2d>>
-        projected_points;
-    std::vector<TrackId> projected_track_ids;
-
-    project_landmarks(current_pose, calib_cam.intrinsics[0], landmarks,
-                      cam_z_threshold, projected_points, projected_track_ids);
-
-    std::cout << "Projected " << projected_track_ids.size() << " points."
-              << std::endl;
-
-    KeypointsData kdl;
-
-    pangolin::ManagedImage<uint8_t> imgl = pangolin::LoadImage(images[fcidl]);
-
-    detectKeypointsAndDescriptors(imgl, kdl, num_features_per_image,
-                                  rotate_features);
-
-    feature_corners[fcidl] = kdl;
-
-    LandmarkMatchData md;
-    find_matches_landmarks(kdl, landmarks, feature_corners, projected_points,
-                           projected_track_ids, match_max_dist_2d,
-                           feature_match_max_dist, feature_match_test_next_best,
-                           md);
-
-    std::cout << "Found " << md.matches.size() << " matches." << std::endl;
-
-    localize_camera(current_pose, calib_cam.intrinsics[0], kdl, landmarks,
-                    reprojection_error_pnp_inlier_threshold_pixel, md);
-
-    current_pose = md.T_w_c;
-
-    if (int(md.inliers.size()) < new_kf_min_inliers && !opt_running &&
-        !opt_finished) {
-      take_keyframe = true;
-    }
-
-    if (!opt_running && opt_finished) {
-      opt_thread->join();
-      landmarks = landmarks_opt;
-      cameras = cameras_opt;
-      calib_cam = calib_cam_opt;
-
-      opt_finished = false;
-    }
-
-    // update image views
-    change_display_to_image(fcidl);
-    change_display_to_image(fcidr);
-
-    current_frame++;
-    return true;
-  }
-}
-*/
-
 // Compute reprojections for all landmark observations for visualization and
 // outlier removal.
 void compute_projections() {
@@ -1237,8 +1088,8 @@ void optimize() {
   landmarks_opt = landmarks;
 
   std::set<FrameCamId> fixed_cameras = {{fid, 0}, {fid, 1}};
-  bundle_adjustment(feature_corners, ba_options, fixed_cameras, calib_cam_opt,
-                    cameras_opt, landmarks_opt);
+  bundle_adjustment(feature_corners, ba_options, fixed_cameras, calib_cam,
+                    cameras, landmarks);
 
   // opt_running = true;
 
