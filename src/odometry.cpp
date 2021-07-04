@@ -377,6 +377,7 @@ int main(int argc, char** argv) {
       if (continue_next) {
         // stop if there is nothing left to do
         continue_next = next_step();
+        
       } else {
         // if the gui is just idling, make sure we don't burn too much CPU
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -898,43 +899,6 @@ bool next_step() {
     md.matches.clear();
     projected_track_ids.clear();
     projected_points.clear();
-    // for (long unsigned int i = 0; i < kdl.corners.size(); i++) {
-    //   auto pcr = kdl.corners[i];
-    //   int dist1 = 257;
-    //   int dist2 = 257;
-
-    //   auto best_pind = 0;
-
-    //   for (long unsigned int j = 0; j < projected_points.size(); j++) {
-    //     auto pt = projected_points[j];
-    //     if ((pt - pcr).norm() <= match_max_dist_2d) {
-    //       auto p_ind = projected_track_ids[j];
-    //       auto lm = landmarks.at(p_ind);
-    //       auto desc1 = kdl.corner_descriptors[i];
-    //       auto lm_dist = 257;
-    //       for (auto el : lm.obs) {
-    //         auto fcid = el.first;
-    //         auto fid = el.second;
-    //         auto desc2 = feature_corners.at(fcid).corner_descriptors[fid];
-    //         int curr_dist = (desc1 ^ desc2).count();
-    //         if (curr_dist < lm_dist) {
-    //           lm_dist = curr_dist;
-    //         }
-    //       }
-    //       if (lm_dist < dist1) {
-    //         dist2 = dist1;
-    //         dist1 = lm_dist;
-    //         best_pind = projected_track_ids[j];
-    //       } else if (lm_dist < dist2)
-    //         dist2 = lm_dist;
-    //     }
-    //   }
-    //   if ((dist1 >= feature_match_max_dist) ||
-    //       (dist2 < feature_match_test_next_best * dist1)) {
-    //     continue;
-    //   }
-    //   md.matches.push_back(std::make_pair(i, best_pind));
-    // }
     
     std::cout << "Detected " << kdl.corners.size() << " new keypoints."
               << std::endl;

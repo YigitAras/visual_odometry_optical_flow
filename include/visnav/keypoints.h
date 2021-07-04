@@ -331,16 +331,19 @@ void match_optical(
   kdr.corners.clear();
   matches.clear();
   int i = 0;
+  int j = 0;
   std::unordered_map<FeatureId, TrackId> updated_tracks;
   for (const auto& t : transforms) {
     // std::cout << "SEG FAULT?" << std::endl;
     // if(t.second.data)
-    kdr.corners.push_back(t.second.translation().cast<double>());
-
-    if(!stereo){
-
+    if(stereo){
+      kdr.corners.push_back(t.second.translation().cast<double>());
+    }
+    else{
       if(prop_tracks.find(t.first) != prop_tracks.end()){
-        updated_tracks.insert(std::make_pair(i,prop_tracks[t.first]));
+        kdr.corners.push_back(t.second.translation().cast<double>());
+        updated_tracks.insert(std::make_pair(j,prop_tracks[t.first]));
+        j++;
       }
     }
     

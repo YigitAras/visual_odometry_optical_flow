@@ -299,6 +299,7 @@ void add_new_landmarks(const FrameCamId fcidl, const FrameCamId fcidr,
                                                         R_0_1);
 
   auto ind = 0;
+  auto added = 0;
   for (auto el : md_stereo.inliers) {
     if (checker.find(el) == checker.end()) {
       opengv::point_t pp =
@@ -311,9 +312,11 @@ void add_new_landmarks(const FrameCamId fcidl, const FrameCamId fcidr,
       landmarks.insert(std::make_pair(next_landmark_id, lm));
       prop_tracks.insert(std::make_pair(el.first, next_landmark_id));
       next_landmark_id++;
+      added++;
     }
     ind++;
   }
+  
 }
 
 void remove_old_keyframes(const FrameCamId fcidl, const int max_num_kfs,
