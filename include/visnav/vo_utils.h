@@ -84,7 +84,7 @@ void find_matches_landmarks(
     const double match_max_dist_2d, const int feature_match_threshold,
     const double feature_match_dist_2_best, LandmarkMatchData& md,
     std::unordered_map<FeatureId, TrackId>& prop_tracks) {
- //md.matches.clear();
+  // md.matches.clear();
 
   // TODO SHEET 5: Find the matches between projected landmarks and detected
   // keypoints in the current frame. For every detected keypoint search for
@@ -95,53 +95,52 @@ void find_matches_landmarks(
   // should be used to filter outliers the same way as in exercise 3. You should
   // fill md.matches with <featureId,trackId> pairs for the successful matches
   // that pass all tests.
-  
-    /*
-    for (long unsigned int i = 0; i < kdl.corners.size(); i++) {
-      auto pcr = kdl.corners[i];
-      int dist1 = 257;
-      int dist2 = 257;
 
-      auto best_pind = 0;
+  /*
+  for (long unsigned int i = 0; i < kdl.corners.size(); i++) {
+    auto pcr = kdl.corners[i];
+    int dist1 = 257;
+    int dist2 = 257;
 
-      for (long unsigned int j = 0; j < projected_points.size(); j++) {
-        auto pt = projected_points[j];
-        if ((pt - pcr).norm() <= match_max_dist_2d) {
-          auto p_ind = projected_track_ids[j];
-          auto lm = landmarks.at(p_ind);
-          auto desc1 = kdl.corner_descriptors[i];
-          auto lm_dist = 257;
-          for (auto el : lm.obs) {
-            auto fcid = el.first;
-            auto fid = el.second;
-            auto desc2 = feature_corners.at(fcid).corner_descriptors[fid];
-            int curr_dist = (desc1 ^ desc2).count();
-            if (curr_dist < lm_dist) {
-              lm_dist = curr_dist;
-            }
+    auto best_pind = 0;
+
+    for (long unsigned int j = 0; j < projected_points.size(); j++) {
+      auto pt = projected_points[j];
+      if ((pt - pcr).norm() <= match_max_dist_2d) {
+        auto p_ind = projected_track_ids[j];
+        auto lm = landmarks.at(p_ind);
+        auto desc1 = kdl.corner_descriptors[i];
+        auto lm_dist = 257;
+        for (auto el : lm.obs) {
+          auto fcid = el.first;
+          auto fid = el.second;
+          auto desc2 = feature_corners.at(fcid).corner_descriptors[fid];
+          int curr_dist = (desc1 ^ desc2).count();
+          if (curr_dist < lm_dist) {
+            lm_dist = curr_dist;
           }
-          if (lm_dist < dist1) {
-            dist2 = dist1;
-            dist1 = lm_dist;
-            best_pind = projected_track_ids[j];
-          } else if (lm_dist < dist2)
-            dist2 = lm_dist;
         }
+        if (lm_dist < dist1) {
+          dist2 = dist1;
+          dist1 = lm_dist;
+          best_pind = projected_track_ids[j];
+        } else if (lm_dist < dist2)
+          dist2 = lm_dist;
       }
-      if ((dist1 >= feature_match_threshold) ||
-          (dist2 < feature_match_dist_2_best * dist1)) {
-        continue;
-      }
-      md.matches.push_back(std::make_pair(i, best_pind));
     }
-    */
-  
-    // CAREFUL FOR CORRESPONDANCE OF FEATUREID of KDL - KDN
+    if ((dist1 >= feature_match_threshold) ||
+        (dist2 < feature_match_dist_2_best * dist1)) {
+      continue;
+    }
+    md.matches.push_back(std::make_pair(i, best_pind));
+  }
+  */
 
-    for (auto el : prop_tracks) {
-      md.matches.push_back(el);
-    }
-  
+  // CAREFUL FOR CORRESPONDANCE OF FEATUREID of KDL - KDN
+
+  for (auto el : prop_tracks) {
+    md.matches.push_back(el);
+  }
 }
 
 void localize_camera(const Sophus::SE3d& current_pose,
@@ -223,26 +222,25 @@ void initialize_transforms(
   }
 
   // Below is haram-be code
-  // /*
+  //
   // if (!stereo_init) {
   //   for (const auto& match : md.inliers) {
   //     FeatureId fid = match.first;
   //     TrackId tid = match.second;
 
-  //     for (size_t t = 0; t < projected_track_ids.size(); t++) {
-  //       if (projected_track_ids[t] == tid) {
-  //         transforms[fid].translation() = projected_points[t].cast<float>();
+  //     // for (size_t t = 0; t < projected_track_ids.size(); t++) {
+  //     //   if (projected_track_ids[t] == tid) {
+  //     //     transforms[fid].translation() = projected_points[t].cast<float>();
+  //     //   }
+  //     // }
+
+  //     if (prop_tracks.find(fid) != prop_tracks.end()) {
+  //       if (prop_tracks.at(fid) == tid) {
+  //         transforms[fid].translation() = kdl.corners[fid].cast<float>();
   //       }
   //     }
-
-  //    // if(prop_tracks.find(fid) != prop_tracks.end()){
-  //    // if (prop_tracks.at(fid) == tid) {
-  //    //   transforms[fid].translation() = kdl.corners[fid].cast<float>();
-  //    //  }
-  //    // }
-
   //   }
-  //   */
+  // }
 }
 
 void add_new_landmarks(const FrameCamId fcidl, const FrameCamId fcidr,
@@ -316,7 +314,6 @@ void add_new_landmarks(const FrameCamId fcidl, const FrameCamId fcidr,
     }
     ind++;
   }
-  
 }
 
 void remove_old_keyframes(const FrameCamId fcidl, const int max_num_kfs,
