@@ -140,6 +140,9 @@ Landmarks landmarks_opt;
 /// landmark positions that were removed from the current map
 Landmarks old_landmarks;
 
+// KD-tree for Old landmarks
+
+
 // SE2 transforms between consecutive frames
 std::unordered_map<FrameCamId, std::unordered_map<TrackId, Sophus::SE2d>>
     transforms;
@@ -377,7 +380,7 @@ int main(int argc, char** argv) {
       if (continue_next) {
         // stop if there is nothing left to do
         continue_next = next_step();
-        
+
       } else {
         // if the gui is just idling, make sure we don't burn too much CPU
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -686,7 +689,8 @@ void draw_scene() {
 
   // render points
   if (show_points3d && landmarks.size() > 0) {
-    //std::cout << "Landmarks to be drawn: " <<  " " << landmarks.size() << std::endl;
+    // std::cout << "Landmarks to be drawn: " <<  " " << landmarks.size() <<
+    // std::endl;
     glPointSize(3.0);
     glBegin(GL_POINTS);
     for (const auto& kv_lm : landmarks) {
@@ -843,8 +847,8 @@ bool next_step() {
       projected_points;
   std::vector<TrackId> projected_track_ids;
 
-  project_landmarks(current_pose, calib_cam.intrinsics[0], landmarks,
-                    cam_z_threshold, projected_points, projected_track_ids);
+  // project_landmarks(current_pose, calib_cam.intrinsics[0], landmarks,
+  //                   cam_z_threshold, projected_points, projected_track_ids);
 
   std::cout << "KF Projected " << projected_track_ids.size() << " points."
             << std::endl;
@@ -866,41 +870,40 @@ bool next_step() {
 
   if (current_frame == 150 || feature_corners[fcidl].corners.size() < 150) {
     // KURT GIBI BURDA PROPAGATE SEYLERINI TEMIZLE EGER SIFIRLANICAKSA
-    
+
     kdl = feature_corners[fcidl];
     KeypointsData dummy;
-    
+
     detectKeypointsAndDescriptors(imgl, dummy, num_features_per_image,
                                   rotate_features);
-    
-    
+
     // code block
     std::vector<Eigen::Vector2d> ides;
-    for(auto cc: dummy.corners){
-      bool found = false;;
-      for(auto ch: kdl.corners){
-        if((cc-ch).norm() < 3){
+    for (auto cc : dummy.corners) {
+      bool found = false;
+      ;
+      for (auto ch : kdl.corners) {
+        if ((cc - ch).norm() < 5) {
           found = true;
           break;
         }
       }
-      if(found == false) ides.push_back(cc);
+      if (found == false) ides.push_back(cc);
     }
 
-    for(auto cc: ides){
+    for (auto cc : ides) {
       kdl.corners.push_back(cc);
     }
     computeAngles(imgl, kdl, rotate_features);
     computeDescriptors(imgl, kdl);
-    
-    
+
     // code block ==//
-    
-    //propagate_tracks.clear();
-    md.matches.clear();
-    projected_track_ids.clear();
-    projected_points.clear();
-    
+
+    // propagate_tracks.clear();
+    // md.matches.clear();
+    // projected_track_ids.clear();
+    // projected_points.clear();
+
     std::cout << "Detected " << kdl.corners.size() << " new keypoints."
               << std::endl;
   } else {
@@ -918,11 +921,13 @@ bool next_step() {
   // matchDescriptors(kdl.corner_descriptors, kdr.corner_descriptors,
   //                  md_stereo.matches, feature_match_max_dist,
   //                  feature_match_test_next_best);
+
   std::unordered_map<FeatureId, Eigen::AffineCompact2f> l_r_transforms;
   initialize_transforms(md, kdl, projected_points, projected_track_ids, true,
                         l_r_transforms, propagate_tracks);
-  find_motion_consec(kdl, old_pyramid, pyramid_r, num_levels, l_r_transforms, true, propagate_tracks);
-  match_optical(kdr, l_r_transforms, md_stereo.matches,true, propagate_tracks);
+  find_motion_consec(kdl, old_pyramid, pyramid_r, num_levels, l_r_transforms,
+                     true, propagate_tracks);
+  match_optical(kdr, l_r_transforms, md_stereo.matches, true, propagate_tracks);
   computeAngles(imgr, kdr, rotate_features);
   computeDescriptors(imgr, kdr);
 
@@ -943,8 +948,8 @@ bool next_step() {
 
   find_matches_landmarks(kdl, landmarks, feature_corners, projected_points,
                          projected_track_ids, match_max_dist_2d,
-                         feature_match_max_dist,
-                         feature_match_test_next_best, md, propagate_tracks);
+                         feature_match_max_dist, feature_match_test_next_best,
+                         md, propagate_tracks);
 
   std::cout << "Found " << md.matches.size() << " matches." << std::endl;
 
@@ -956,13 +961,18 @@ bool next_step() {
   cameras[fcidl].T_w_c = current_pose;
   cameras[fcidr].T_w_c = current_pose * T_0_1;
 
+  
+
   add_new_landmarks(fcidl, fcidr, kdl, kdr, calib_cam, md_stereo, md, landmarks,
                     next_landmark_id, propagate_tracks);
 
-//sildigimiz landmarklari propagate etmemek lazim
+  // sildigimiz landmarklari propagate etmemek lazim
   remove_old_keyframes(fcidl, 5, cameras, landmarks, old_landmarks, kf_frames);
   optimize();
   current_pose = cameras[fcidl].T_w_c;
+
+  project_landmarks(current_pose, calib_cam.intrinsics[0], landmarks,
+                    cam_z_threshold, projected_points, projected_track_ids);
 
   std::unordered_map<FeatureId, Eigen::AffineCompact2f> i_j_transforms;
   initialize_transforms(md, kdl, projected_points, projected_track_ids, false,
@@ -976,16 +986,11 @@ bool next_step() {
     visnav::ManagedImage<uint8_t> n_imgl;
     n_imgl.CopyFrom(visnav::Image<uint8_t>(_n_imgl.ptr, _n_imgl.w, _n_imgl.h,
                                            _n_imgl.pitch));
-    // pyramid.reset(new std::vector<visnav::ManagedImagePyr<uint8_t>>);
-    // pyramid->resize(calib_cam.intrinsics.size());
-    // pyramid.setFromImage()
 
-    // for (size_t i = 0; i < calib_cam.intrinsics.size(); i++) {
-    //   pyramid->at(i).setFromImage(n_imgl, num_levels);
-    // }
     pyramid_n.setFromImage(n_imgl, num_levels);
 
-    find_motion_consec(kdl, old_pyramid, pyramid_n, num_levels, i_j_transforms , true, propagate_tracks);
+    find_motion_consec(kdl, old_pyramid, pyramid_n, num_levels, i_j_transforms,
+                       true, propagate_tracks);
 
     std::cout << "NUM KD: " << kdl.corners.size()
               << "\nNUM MATCHEEESS: " << i_j_transforms.size() << std::endl;
@@ -1000,7 +1005,7 @@ bool next_step() {
   // update image views
   change_display_to_image(fcidl);
   change_display_to_image(fcidr);
-  
+
   compute_projections();
 
   current_frame++;

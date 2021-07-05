@@ -96,46 +96,6 @@ void find_matches_landmarks(
   // fill md.matches with <featureId,trackId> pairs for the successful matches
   // that pass all tests.
 
-  /*
-  for (long unsigned int i = 0; i < kdl.corners.size(); i++) {
-    auto pcr = kdl.corners[i];
-    int dist1 = 257;
-    int dist2 = 257;
-
-    auto best_pind = 0;
-
-    for (long unsigned int j = 0; j < projected_points.size(); j++) {
-      auto pt = projected_points[j];
-      if ((pt - pcr).norm() <= match_max_dist_2d) {
-        auto p_ind = projected_track_ids[j];
-        auto lm = landmarks.at(p_ind);
-        auto desc1 = kdl.corner_descriptors[i];
-        auto lm_dist = 257;
-        for (auto el : lm.obs) {
-          auto fcid = el.first;
-          auto fid = el.second;
-          auto desc2 = feature_corners.at(fcid).corner_descriptors[fid];
-          int curr_dist = (desc1 ^ desc2).count();
-          if (curr_dist < lm_dist) {
-            lm_dist = curr_dist;
-          }
-        }
-        if (lm_dist < dist1) {
-          dist2 = dist1;
-          dist1 = lm_dist;
-          best_pind = projected_track_ids[j];
-        } else if (lm_dist < dist2)
-          dist2 = lm_dist;
-      }
-    }
-    if ((dist1 >= feature_match_threshold) ||
-        (dist2 < feature_match_dist_2_best * dist1)) {
-      continue;
-    }
-    md.matches.push_back(std::make_pair(i, best_pind));
-  }
-  */
-
   // CAREFUL FOR CORRESPONDANCE OF FEATUREID of KDL - KDN
 
   for (auto el : prop_tracks) {
@@ -222,26 +182,22 @@ void initialize_transforms(
   }
 
   // Below is haram-be code
-  //
-  // if (!stereo_init) {
-  //   for (const auto& match : md.inliers) {
-  //     FeatureId fid = match.first;
-  //     TrackId tid = match.second;
 
-  //     // for (size_t t = 0; t < projected_track_ids.size(); t++) {
-  //     //   if (projected_track_ids[t] == tid) {
-  //     //     transforms[fid].translation() = projected_points[t].cast<float>();
-  //     //   }
-  //     // }
+  if (!stereo_init) {
+    for (const auto& match : md.inliers) {
+      FeatureId fid = match.first;
+      TrackId tid = match.second;
 
-  //     if (prop_tracks.find(fid) != prop_tracks.end()) {
-  //       if (prop_tracks.at(fid) == tid) {
-  //         transforms[fid].translation() = kdl.corners[fid].cast<float>();
-  //       }
-  //     }
-  //   }
-  // }
+      for (size_t t = 0; t < projected_track_ids.size(); t++) {
+        if (projected_track_ids[t] == tid) {
+          transforms[fid].translation() = projected_points[t].cast<float>();
+        }
+      }
+    }
+  }
 }
+
+
 
 void add_new_landmarks(const FrameCamId fcidl, const FrameCamId fcidr,
                        const KeypointsData& kdl, const KeypointsData& kdr,
@@ -300,6 +256,8 @@ void add_new_landmarks(const FrameCamId fcidl, const FrameCamId fcidr,
   auto added = 0;
   for (auto el : md_stereo.inliers) {
     if (checker.find(el) == checker.end()) {
+      // check if it is in the old landmarks
+
       opengv::point_t pp =
           md.T_w_c * opengv::triangulation::triangulate(adapter, ind);
 
