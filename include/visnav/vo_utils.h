@@ -197,8 +197,6 @@ void initialize_transforms(
   }
 }
 
-
-
 void add_new_landmarks(const FrameCamId fcidl, const FrameCamId fcidr,
                        const KeypointsData& kdl, const KeypointsData& kdr,
                        const Calibration& calib_cam, const MatchData& md_stereo,

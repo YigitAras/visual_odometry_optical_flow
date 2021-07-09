@@ -36,6 +36,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <iostream>
 #include <sstream>
 #include <thread>
+#include <fstream>
 
 #include <sophus/se3.hpp>
 
@@ -96,7 +97,7 @@ constexpr int NUM_CAMS = 2;
 /// Variables
 ///////////////////////////////////////////////////////////////////////////////
 
-int current_frame = 150;
+int current_frame = 0;
 Sophus::SE3d current_pose;
 bool take_keyframe = true;
 TrackId next_landmark_id = 0;
@@ -141,7 +142,6 @@ Landmarks landmarks_opt;
 Landmarks old_landmarks;
 
 // KD-tree for Old landmarks
-
 
 // SE2 transforms between consecutive frames
 std::unordered_map<FrameCamId, std::unordered_map<TrackId, Sophus::SE2d>>
@@ -961,8 +961,6 @@ bool next_step() {
   cameras[fcidl].T_w_c = current_pose;
   cameras[fcidr].T_w_c = current_pose * T_0_1;
 
-  
-
   add_new_landmarks(fcidl, fcidr, kdl, kdr, calib_cam, md_stereo, md, landmarks,
                     next_landmark_id, propagate_tracks);
 
@@ -1008,6 +1006,15 @@ bool next_step() {
 
   compute_projections();
 
+  std::ofstream outfile;
+
+  outfile.open("trajectory.txt",
+               std::ios_base::app);  // append instead of overwrite
+  outfile << timestamps[current_frame] << "," << current_pose.translation().x()
+          << "," << current_pose.translation().y() << ','
+          << current_pose.translation().z() << ',' << current_pose.data()[0]
+          << "," << current_pose.data()[1] << "," << current_pose.data()[2]
+          << "," << current_pose.data()[3] << "," << 0 << "," << 0 << std::endl;
   current_frame++;
   return true;
 }

@@ -336,25 +336,23 @@ void match_optical(
   for (const auto& t : transforms) {
     // std::cout << "SEG FAULT?" << std::endl;
     // if(t.second.data)
-    if(stereo){
+    if (stereo) {
       kdr.corners.push_back(t.second.translation().cast<double>());
-    }
-    else{
-      if(prop_tracks.find(t.first) != prop_tracks.end()){
+    } else {
+      if (prop_tracks.find(t.first) != prop_tracks.end()) {
         kdr.corners.push_back(t.second.translation().cast<double>());
-        updated_tracks.insert(std::make_pair(j,prop_tracks[t.first]));
+        updated_tracks.insert(std::make_pair(j, prop_tracks[t.first]));
         j++;
       }
     }
-    
+
     matches.emplace_back(t.first, i);
     i++;
   }
-  if(!stereo){
-    // 
+  if (!stereo) {
+    //
     prop_tracks = updated_tracks;
   }
-  
 }
 
 void matchDescriptors(const std::vector<std::bitset<256>>& corner_descriptors_1,

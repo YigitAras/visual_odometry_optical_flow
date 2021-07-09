@@ -380,9 +380,8 @@ void find_motion_consec(
     bool prop, std::unordered_map<FeatureId, TrackId>& prop_tracks) {
   float optical_flow_max_recovered_dist2 = 0.04;
 
-
   for (size_t i = 0; i < kd.corners.size(); i++) {
-    //const Eigen::Vector2d p2d = kd.corners[i];
+    // const Eigen::Vector2d p2d = kd.corners[i];
     Eigen::AffineCompact2f transform_1 = transforms[i];
     // transform_1.setIdentity();
     // transform_1.translation() += p2d.cast<float>();
@@ -396,7 +395,7 @@ void find_motion_consec(
     transform_2.linear() = transform_1.linear() * transform_2.linear();
     // std::cout << "AFTER:\n" << i << std::endl;
     // std::cout << "NEW TRANSFORMS:\n" << transforms[i].matrix() << std::endl;
-    
+
     if (valid) {
       Eigen::AffineCompact2f transform_1_recovered = transform_2;
       // PatchT patch2(img2, transform_2.translation());
@@ -422,7 +421,6 @@ void find_motion_consec(
       transforms.erase(i);
       if (prop) prop_tracks.erase(i);
     }
-
   }
 }
 // Run bundle adjustment to optimize cameras, points, and optionally
