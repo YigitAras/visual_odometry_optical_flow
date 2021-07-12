@@ -53,6 +53,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/highgui.hpp>
+// #include <opencv2/imgproc/imgproc.hpp>
+// #include <opencv2/video/tracking.hpp>
 
 #include <CLI/CLI.hpp>
 
@@ -128,6 +130,7 @@ Matches feature_matches;
 
 /// camera poses in the current map
 Cameras cameras;
+Cameras all_cameras;
 
 /// copy of cameras for optimization in parallel thread
 Cameras cameras_opt;
@@ -235,6 +238,92 @@ using Button = pangolin::Var<std::function<void(void)>>;
 
 Button next_step_btn("ui.next_step", &next_step);
 
+///////////////////////////////////////////////////////////////////////////////
+//// OpenCV Optical Flow
+/*
+void opencv_opt_flow_LR(const pangolin::ManagedImage<uint8_t>& imgl,
+                        const pangolin::ManagedImage<uint8_t>& imgr,
+                        KeypointsData& kdl, KeypointsData& kdr,
+                        MatchData& md_stereo) {
+  std::vector<cv::Point2f> currPointsL, currPointsR, currPointsTemp;
+  for (auto& c : kdl.corners) {
+    currPointsL.push_back(cv::Point2f(c.x(), c.y()));
+  }
+
+  std::vector<float> err;
+  std::vector<uchar> status;
+  cv::TermCriteria criteria = cv::TermCriteria(
+      (cv::TermCriteria::COUNT) + (cv::TermCriteria::EPS), 10, 0.003);
+  cv::Mat imageL(imgl.h, imgl.w, CV_8U, imgl.ptr);
+  cv::Mat imageR(imgr.h, imgr.w, CV_8U, imgr.ptr);
+  kdr.corners.clear();
+  cv::calcOpticalFlowPyrLK(imageL, imageR, currPointsL, currPointsR, status,
+                           err, cv::Size(5, 5), 2, criteria);
+  cv::calcOpticalFlowPyrLK(imageR, imageL, currPointsR, currPointsTemp, status,
+                           err, cv::Size(5, 5), 2, criteria);
+
+  float threshold = 1;
+
+  for (int i = 0; i < currPointsTemp.size(); i++) {
+    Eigen::Vector2d diff(std::abs((currPointsTemp[i] - currPointsL[i]).x),
+                         std::abs((currPointsTemp[i] - currPointsL[i]).y));
+    Eigen::Vector2d tempy(currPointsL[i].x, currPointsL[i].y);
+    //  Eigen::Vector3d tt = md_stereo.T_i_j *tempy3.cast<double>();
+    // Eigen::Vector2f tempy(round(tt.x()), round(tt.y()));
+    kdr.corners.push_back(tempy);
+    if ((diff.allFinite()) && (diff.norm() < threshold)) {
+      md_stereo.matches.push_back(std::make_pair(i, i));
+    }
+  }
+  std::cout << kdr.corners.size() << " " << matches.size() << std::endl;
+}
+
+void opencv_opt_flow_ij(pangolin::ManagedImage<uint8_t>& imgc,
+                        pangolin::ManagedImage<uint8_t>& imgn,
+                        KeypointsData& kdl, KeypointsData& kdr,
+                        std::unordered_map<FeatureId, TrackId>& prop_tracks) {
+  std::vector<cv::Point2f> currPointsL, currPointsR, currPointsTemp;
+  for (auto& c : kdl.corners) {
+    currPointsL.push_back(cv::Point2f(c.x(), c.y()));
+  }
+  std::unordered_map<FeatureId, TrackId> updated_tracks;
+
+  std::vector<float> err;
+  std::vector<uchar> status;
+  cv::TermCriteria criteria = cv::TermCriteria(
+      (cv::TermCriteria::COUNT) + (cv::TermCriteria::EPS), 10, 0.003);
+  cv::Mat imageL(imgc.h, imgc.w, CV_8U, imgc.ptr);
+  cv::Mat imageR(imgn.h, imgn.w, CV_8U, imgn.ptr);
+  kdr.corners.clear();
+  cv::calcOpticalFlowPyrLK(imageL, imageR, currPointsL, currPointsR, status,
+                           err, cv::Size(7, 7), 2, criteria);
+  cv::calcOpticalFlowPyrLK(imageR, imageL, currPointsR, currPointsTemp, status,
+                           err, cv::Size(7, 7), 2, criteria);
+
+  float threshold = 1;
+  int j = 0;
+  for (int i = 0; i < currPointsTemp.size(); i++) {
+    Eigen::Vector2d diff(std::abs((currPointsTemp[i] - currPointsL[i]).x),
+                         std::abs((currPointsTemp[i] - currPointsL[i]).y));
+    Eigen::Vector2d tempy(currPointsR[i].x, currPointsR[i].y);
+    //  Eigen::Vector3d tt = md_stereo.T_i_j *tempy3.cast<double>();
+    // Eigen::Vector2f tempy(round(tt.x()), round(tt.y()));
+
+    if ((diff.allFinite()) && (diff.squaredNorm() < threshold)) {
+      // md_stereo.matches.push_back(std::make_pair(i, i));
+      if (prop_tracks.find(i) != prop_tracks.end()) {
+        kdr.corners.push_back(tempy);
+        updated_tracks.insert(std::make_pair(j, prop_tracks[i]));
+        j++;
+      }
+    }
+  }
+  prop_tracks = updated_tracks;
+
+  std::cout << kdr.corners.size() << " " << matches.size() << std::endl;
+}
+// ///////////////////////////////////////////////////////////////////////////////
+*/
 ///////////////////////////////////////////////////////////////////////////////
 /// GUI and Boilerplate Implementation
 ///////////////////////////////////////////////////////////////////////////////
@@ -670,7 +759,9 @@ void draw_scene() {
 
   // render cameras
   if (show_cameras3d) {
+    int cnt = 0;
     for (const auto& cam : cameras) {
+      // if (cnt % 5 == 0) {
       if (cam.first == fcid1) {
         render_camera(cam.second.T_w_c.matrix(), 3.0f, color_selected_left,
                       0.1f);
@@ -683,7 +774,10 @@ void draw_scene() {
         render_camera(cam.second.T_w_c.matrix(), 2.0f, color_camera_right,
                       0.1f);
       }
+      // }
+      // cnt++;
     }
+
     render_camera(current_pose.matrix(), 2.0f, color_camera_current, 0.1f);
   }
 
@@ -794,36 +888,6 @@ void load_data(const std::string& dataset_path, const std::string& calib_path) {
   show_frame2.Meta().gui_changed = true;
 }
 
-// void visualize(const pangolin::ManagedImage<uint8_t>& _img,
-//                const pangolin::ManagedImage<uint8_t>& _img_next,
-//                const KeypointsData& kdl, const KeypointsData& kdn,
-//                std::vector<std::pair<int, int>> matches) {
-//   cv::Mat imageL(_img.h, _img.w, CV_8U, _img.ptr);
-//   cv::Mat nextImageL(_img_next.h, _img_next.w, CV_8U, _img_next.ptr);
-//   cv::Mat out;
-//   cv::hconcat(imageL, nextImageL,
-//               out);  // Syntax-> hconcat(source1,source2,destination);
-//   int checkyboi = 0;
-
-//   for (const auto& i_j : matches) {
-//     if (checkyboi % 5 == 0) {
-//       cv::Point src((int)kdl.corners[i_j.first].x(),
-//                     (int)kdl.corners[i_j.first].y());
-//       cv::Point trgt(kdn.corners[i_j.second].x() + nextImageL.cols,
-//                      kdn.corners[i_j.second].y());
-
-//       int thickness = 1;
-//       int lineType = cv::LINE_8;
-//       cv::line(out, src, trgt, cv::Scalar(255, 0, 0), thickness, lineType);
-//     }
-//     checkyboi++;
-//   }
-
-//   cv::imwrite("Matches", out);
-//   // cv::waitKey(0);
-//   // std::cout << prevPointsL.size() << " and " << testL.size() << std::endl;
-// }
-
 ///////////////////////////////////////////////////////////////////////////////
 /// Here the algorithmically interesting implementation begins
 ///////////////////////////////////////////////////////////////////////////////
@@ -832,23 +896,21 @@ void load_data(const std::string& dataset_path, const std::string& calib_path) {
 // until it returns false for automatic execution.
 
 bool next_step() {
-  if (current_frame >= int(images.size()) / NUM_CAMS) return false;
+  if (current_frame >= (int(images.size() - 1) / NUM_CAMS)) {
+    std::cout << "SEQUENCE IS OVER, PLEASE CLOSE THE PROGRAM \n";
+    return false;
+  }
 
-  std::cout << "CHEKING OUT " << current_frame << std::endl;
+  std::cout << "CHEKING OUT "
+            << " " << current_frame << std::endl;
 
   const Sophus::SE3d T_0_1 = calib_cam.T_i_c[0].inverse() * calib_cam.T_i_c[1];
-
-  // Sophus::SE2d sum_T = Sophus::SE2d();
-  // std::cout << "SE2 TRANSFORM " << sum_T.matrix() << std::endl;
 
   FrameCamId fcidl(current_frame, 0), fcidr(current_frame, 1);
 
   std::vector<Eigen::Vector2d, Eigen::aligned_allocator<Eigen::Vector2d>>
       projected_points;
   std::vector<TrackId> projected_track_ids;
-
-  // project_landmarks(current_pose, calib_cam.intrinsics[0], landmarks,
-  //                   cam_z_threshold, projected_points, projected_track_ids);
 
   std::cout << "KF Projected " << projected_track_ids.size() << " points."
             << std::endl;
@@ -868,9 +930,7 @@ bool next_step() {
   old_pyramid.setFromImage(imgl, num_levels);
   pyramid_r.setFromImage(imgr, num_levels);
 
-  if (current_frame == 150 || feature_corners[fcidl].corners.size() < 150) {
-    // KURT GIBI BURDA PROPAGATE SEYLERINI TEMIZLE EGER SIFIRLANICAKSA
-
+  if (feature_corners[fcidl].corners.size() < 150) {
     kdl = feature_corners[fcidl];
     KeypointsData dummy;
 
@@ -911,16 +971,11 @@ bool next_step() {
     std::cout << "Retrieved " << kdl.corners.size() << " optimized keypoints."
               << std::endl;
   }
-  // detectKeypointsAndDescriptors(imgr, kdr, num_features_per_image,
-  //                               rotate_features);
+
   md_stereo.T_i_j = T_0_1;
 
   Eigen::Matrix3d E;
   computeEssential(T_0_1, E);
-
-  // matchDescriptors(kdl.corner_descriptors, kdr.corner_descriptors,
-  //                  md_stereo.matches, feature_match_max_dist,
-  //                  feature_match_test_next_best);
 
   std::unordered_map<FeatureId, Eigen::AffineCompact2f> l_r_transforms;
   initialize_transforms(md, kdl, projected_points, projected_track_ids, true,
@@ -928,13 +983,9 @@ bool next_step() {
   find_motion_consec(kdl, old_pyramid, pyramid_r, num_levels, l_r_transforms,
                      true, propagate_tracks);
   match_optical(kdr, l_r_transforms, md_stereo.matches, true, propagate_tracks);
+  // opencv_opt_flow_LR(_imgl,_imgr,kdl,kdr,md_stereo);
   computeAngles(imgr, kdr, rotate_features);
   computeDescriptors(imgr, kdr);
-
-  // std::cout << "NUM CORNERS KDL" << kdl.corners.size() << " stereo-matches."
-  //           << std::endl;
-  // std::cout << "OPTICAL BABE Found " << l_r_transforms.size()
-  //           << " stereo-matches." << std::endl;
 
   findInliersEssential(kdl, kdr, calib_cam.intrinsics[0],
                        calib_cam.intrinsics[1], E, 1e-3, md_stereo);
@@ -961,10 +1012,11 @@ bool next_step() {
   cameras[fcidl].T_w_c = current_pose;
   cameras[fcidr].T_w_c = current_pose * T_0_1;
 
+  all_cameras[fcidl].T_w_c = current_pose;
+  all_cameras[fcidr].T_w_c = current_pose * T_0_1;
   add_new_landmarks(fcidl, fcidr, kdl, kdr, calib_cam, md_stereo, md, landmarks,
                     next_landmark_id, propagate_tracks);
 
-  // sildigimiz landmarklari propagate etmemek lazim
   remove_old_keyframes(fcidl, 5, cameras, landmarks, old_landmarks, kf_frames);
   optimize();
   current_pose = cameras[fcidl].T_w_c;
@@ -990,9 +1042,8 @@ bool next_step() {
     find_motion_consec(kdl, old_pyramid, pyramid_n, num_levels, i_j_transforms,
                        true, propagate_tracks);
 
-    std::cout << "NUM KD: " << kdl.corners.size()
-              << "\nNUM MATCHEEESS: " << i_j_transforms.size() << std::endl;
     match_optical(kdn, i_j_transforms, matches[fcidl], false, propagate_tracks);
+    // opencv_opt_flow_ij(_imgl, _n_imgl, kdl, kdn, propagate_tracks);
     computeAngles(n_imgl, kdn, rotate_features);
     computeDescriptors(n_imgl, kdn);
     feature_corners[n_fcidl] = kdn;
@@ -1008,6 +1059,7 @@ bool next_step() {
 
   std::ofstream outfile;
 
+  // Save trajectory in EUROC format
   outfile.open("trajectory.txt",
                std::ios_base::app);  // append instead of overwrite
   outfile << timestamps[current_frame] << "," << current_pose.translation().x()
@@ -1084,10 +1136,7 @@ void optimize() {
   // camera constant is a bit suboptimal, since we only need 1 DoF, but it's
   // simple and the initial poses should be good from calibration.
   FrameId fid = *(kf_frames.begin());
-  // FrameId fid = std::max(current_frame - 10, 0);
-  // std::cout << "fid " << fid << std::endl;
 
-  // Prepare bundle adjustment
   BundleAdjustmentOptions ba_options;
   ba_options.optimize_intrinsics = ba_optimize_intrinsics;
   ba_options.use_huber = true;
@@ -1103,20 +1152,5 @@ void optimize() {
   bundle_adjustment(feature_corners, ba_options, fixed_cameras, calib_cam,
                     cameras, landmarks);
 
-  // opt_running = true;
-
-  // // THIS LINE MAY PRODUCE AN "Abort Trap" ERROR!!
-  // opt_thread.reset(new std::thread([fid, ba_options] {
-  //   std::set<FrameCamId> fixed_cameras = {{fid, 0}, {fid, 1}};
-
-  //   bundle_adjustment(feature_corners, ba_options, fixed_cameras,
-  //   calib_cam_opt,
-  //                     cameras_opt, landmarks_opt);
-
-  //   opt_finished = true;
-  //   opt_running = false;
-  // }));
-
-  // Update project info cache
   compute_projections();
 }
